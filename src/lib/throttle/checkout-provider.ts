@@ -6,7 +6,7 @@ import type {
   CheckoutSession,
   WebhookResult,
 } from "@/types"
-import { addCartItems, checkoutCart, createCart } from "./cart"
+import { addCartItems, checkoutCart, createCart, getCart } from "./cart"
 import { createEmbedSession } from "./sessions"
 import { getOrder } from "./orders"
 import {
@@ -46,35 +46,71 @@ function toThrottleAddress(addr?: Address): ThrottleAddress | undefined {
 export const throttleCheckoutProvider: CheckoutProvider = {
   async createSession(
     cart: Cart,
-    customer?: { email: string; shippingAddress?: Address }
+    customer?: { email: string; shippingAddress?: Address; throttleCartId?: string }
   ): Promise<CheckoutSession> {
     if (cart.items.length === 0) {
       throw new Error("Cannot create a checkout session for an empty cart.")
     }
 
     const shippingAddress = toThrottleAddress(customer?.shippingAddress)
-    const throttleCart = await createCart({
-      externalId: cart.id,
-      customerEmail: customer?.email,
-      shippingAddress,
-    })
 
-    await addCartItems(
-      throttleCart.id,
-      cart.items.map((item) => ({
-        name: item.variantName
-          ? `${item.name} — ${item.variantName}`
-          : item.name,
-        unitPrice: item.price,
-        quantity: item.quantity,
-        referenceId: item.variantId,
-        imageUrl: item.image.url,
-        description: item.image.alt,
-        metadata: { productId: item.productId, slug: item.slug },
-      }))
-    )
+    // Reuse the cart the buyer's been adding to all session if the
+    // client passed it; only fall back to building from local items
+    // when there isn't one yet (first-time flow / cart was cleared).
+    let throttleCartId: string
+    if (customer?.throttleCartId) {
+      // Verify the cart is still in `open` status. A "checked_out" cart
+      // would already have an order — re-running /checkout would 4xx.
+      const existing = await getCart(customer.throttleCartId).catch(() => null)
+      if (existing && existing.status === "open") {
+        throttleCartId = existing.id
+      } else {
+        // Cart went away or already converted; build a fresh one.
+        const fresh = await createCart({
+          externalId: cart.id,
+          customerEmail: customer.email,
+          shippingAddress,
+        })
+        await addCartItems(
+          fresh.id,
+          cart.items.map((item) => ({
+            name: item.variantName
+              ? `${item.name} — ${item.variantName}`
+              : item.name,
+            unitPrice: item.price,
+            quantity: item.quantity,
+            referenceId: item.variantId,
+            imageUrl: item.image.url,
+            description: item.image.alt,
+            metadata: { productId: item.productId, slug: item.slug },
+          }))
+        )
+        throttleCartId = fresh.id
+      }
+    } else {
+      const throttleCart = await createCart({
+        externalId: cart.id,
+        customerEmail: customer?.email,
+        shippingAddress,
+      })
+      await addCartItems(
+        throttleCart.id,
+        cart.items.map((item) => ({
+          name: item.variantName
+            ? `${item.name} — ${item.variantName}`
+            : item.name,
+          unitPrice: item.price,
+          quantity: item.quantity,
+          referenceId: item.variantId,
+          imageUrl: item.image.url,
+          description: item.image.alt,
+          metadata: { productId: item.productId, slug: item.slug },
+        }))
+      )
+      throttleCartId = throttleCart.id
+    }
 
-    const order = await checkoutCart(throttleCart.id)
+    const order = await checkoutCart(throttleCartId)
     const session = await createEmbedSession({
       amount: order.total,
       currency: order.currency,
@@ -82,7 +118,7 @@ export const throttleCheckoutProvider: CheckoutProvider = {
       externalCartId: cart.id,
       customerEmail: customer?.email,
       shippingAddress,
-      metadata: { orderId: order.id, throttleCartId: throttleCart.id },
+      metadata: { orderId: order.id, throttleCartId },
     })
 
     const status: CheckoutSession["status"] =
@@ -101,7 +137,7 @@ export const throttleCheckoutProvider: CheckoutProvider = {
       status,
       orderId: order.id,
       metadata: {
-        throttleCartId: throttleCart.id,
+        throttleCartId,
         orderNumber: order.orderNumber,
         embedToken: session.embedToken ?? "",
         hostedUrl: session.hostedUrl ?? "",

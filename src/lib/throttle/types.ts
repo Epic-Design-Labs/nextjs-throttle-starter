@@ -32,9 +32,15 @@ export interface ThrottleAddress {
   email?: string
 }
 
+export type ThrottleCartStatus =
+  | "open"
+  | "checkout"
+  | "converted"
+  | "abandoned"
+
 export interface ThrottleCart {
   id: string
-  status: "open" | "checked_out" | "abandoned" | "expired"
+  status: ThrottleCartStatus
   currency: string
   subtotal: number
   taxTotal: number
@@ -47,11 +53,19 @@ export interface ThrottleCart {
   updatedAt: string
 }
 
+export type ThrottleLineItemType =
+  | "product"
+  | "subscription"
+  | "service"
+  | "ticket"
+  | "donation"
+  | "custom"
+
 export interface ThrottleLineItem {
   id: string
   cartId: string | null
   orderId: string | null
-  type: "product" | "shipping" | "tax" | "discount" | "fee"
+  type: ThrottleLineItemType
   referenceId: string | null
   name: string
   description: string | null

@@ -46,6 +46,7 @@ const EMPTY_FORM: ShippingForm = {
 export default function CheckoutPage() {
   const router = useRouter()
   const items = useCartStore((s) => s.items)
+  const throttleCartId = useCartStore((s) => s.throttleCartId)
   const getSubtotal = useCartStore((s) => s.getSubtotal)
   const clearCart = useCartStore((s) => s.clearCart)
   const [mounted, setMounted] = useState(false)
@@ -106,6 +107,7 @@ export default function CheckoutPage() {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
+          throttleCartId: throttleCartId ?? undefined,
           items,
           customer: {
             email: form.email,

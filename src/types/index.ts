@@ -326,7 +326,12 @@ export interface WebhookResult {
 export interface CheckoutProvider {
   createSession(
     cart: Cart,
-    customer?: { email: string; shippingAddress?: Address }
+    customer?: {
+      email: string
+      shippingAddress?: Address
+      /** Optional engine-specific cart id (e.g. Throttle cart UUID) to reuse. */
+      throttleCartId?: string
+    }
   ): Promise<CheckoutSession>
   getSession(sessionId: string): Promise<CheckoutSession>
   handleWebhook(
@@ -354,6 +359,14 @@ export interface ProductRepository {
     query: string,
     pagination?: PaginationParams
   ): Promise<PaginatedResult<Product>>
+  /**
+   * Resolve a variant + its parent product by variant id. Used by the
+   * server-side cart routes to price items authoritatively — never trust
+   * the client for unitPrice.
+   */
+  findVariant(
+    variantId: string
+  ): Promise<{ product: Product; variant: ProductVariant } | null>
 }
 
 export interface CategoryRepository {

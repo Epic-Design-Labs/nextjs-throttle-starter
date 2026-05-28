@@ -1,117 +1,59 @@
-import { env } from "@/lib/env"
-import type {
-  ThrottleEnvelope,
-  ThrottleErrorEnvelope,
-} from "./types"
+import "server-only"
 
-const API_VERSION_PREFIX = "/api/v1"
+import { ThrottleApiError as CartSdkError } from "@usethrottle/cart"
+import { ThrottleCheckoutError } from "@usethrottle/checkout-sdk/server"
 
+/**
+ * Single error class the rest of the app catches against. The two
+ * official SDKs throw different error classes (`ThrottleApiError` from
+ * @usethrottle/cart, `ThrottleCheckoutError` from
+ * @usethrottle/checkout-sdk), and an integrator should not have to
+ * remember which method throws which. `toThrottleApiError` collapses
+ * both into one shape.
+ */
 export class ThrottleApiError extends Error {
   constructor(
     readonly status: number,
     readonly code: string,
     message: string,
-    readonly details?: ThrottleErrorEnvelope["error"]["details"]
+    readonly details?: unknown
   ) {
     super(message)
     this.name = "ThrottleApiError"
   }
+
+  static is(err: unknown): err is ThrottleApiError {
+    return err instanceof ThrottleApiError
+  }
 }
 
-function requireApiKey(): string {
-  if (!env.THROTTLE_API_KEY) {
-    throw new Error(
-      "THROTTLE_API_KEY is not set. Add it to .env.local. See .env.local.example."
+export function toThrottleApiError(err: unknown): ThrottleApiError {
+  if (err instanceof ThrottleApiError) return err
+  if (err instanceof CartSdkError || err instanceof ThrottleCheckoutError) {
+    return new ThrottleApiError(
+      err.statusCode,
+      err.code,
+      err.message,
+      err.details
     )
   }
-  return env.THROTTLE_API_KEY
-}
-
-export interface ThrottleFetchOptions extends Omit<RequestInit, "body" | "headers"> {
-  body?: unknown
-  query?: Record<string, string | number | boolean | undefined>
-  headers?: Record<string, string>
-}
-
-async function rawRequest(
-  path: string,
-  options: ThrottleFetchOptions = {}
-): Promise<unknown> {
-  const apiKey = requireApiKey()
-  const { body, query, headers: extraHeaders, ...rest } = options
-
-  const isAbsolute = /^https?:\/\//i.test(path)
-  const isVersionedPath = path.startsWith(API_VERSION_PREFIX)
-  const url = new URL(
-    isAbsolute
-      ? path
-      : `${env.THROTTLE_API_BASE_URL}${isVersionedPath ? path : `${API_VERSION_PREFIX}${path}`}`
-  )
-  if (query) {
-    for (const [key, value] of Object.entries(query)) {
-      if (value === undefined) continue
-      url.searchParams.set(key, String(value))
-    }
+  if (err instanceof Error) {
+    return new ThrottleApiError(500, "throttle_error", err.message)
   }
-
-  const response = await fetch(url, {
-    ...rest,
-    headers: {
-      "x-api-key": apiKey,
-      "content-type": "application/json",
-      accept: "application/json",
-      ...extraHeaders,
-    },
-    body: body === undefined ? undefined : JSON.stringify(body),
-  })
-
-  if (response.status === 204) return null
-
-  const text = await response.text()
-  const json = text ? (JSON.parse(text) as unknown) : null
-
-  if (!response.ok) {
-    const errPayload = json as ThrottleErrorEnvelope | null
-    const code = errPayload?.error?.code ?? "throttle_error"
-    const message =
-      errPayload?.error?.message ?? `Throttle API error ${response.status}`
-    throw new ThrottleApiError(
-      response.status,
-      code,
-      message,
-      errPayload?.error?.details
-    )
-  }
-  return json
+  return new ThrottleApiError(500, "throttle_error", "Unknown Throttle error.")
 }
 
 /**
- * Low-level fetch wrapper for the Throttle REST API. Adds auth + JSON
- * encoding, unwraps the `{ data, meta }` envelope, and throws
- * ThrottleApiError on non-2xx responses.
+ * Wrap a Throttle SDK call so all SDKs surface a unified error class.
  *
- * Path is appended to /api/v1 by default — pass an absolute URL or a
- * path beginning with `/api/v1` to bypass the prefix.
+ * ```ts
+ * const cart = await callThrottle(() => cartClient.carts.create({ ... }))
+ * ```
  */
-export async function throttleFetch<T>(
-  path: string,
-  options: ThrottleFetchOptions = {}
-): Promise<T> {
-  const json = await rawRequest(path, options)
-  if (json && typeof json === "object" && "data" in (json as object)) {
-    return (json as ThrottleEnvelope<T>).data
+export async function callThrottle<T>(fn: () => Promise<T>): Promise<T> {
+  try {
+    return await fn()
+  } catch (err) {
+    throw toThrottleApiError(err)
   }
-  return json as T
-}
-
-/**
- * Same as {@link throttleFetch} but returns the full `{ data, meta }`
- * envelope. Use this when you need pagination cursors.
- */
-export async function throttleFetchEnvelope<T>(
-  path: string,
-  options: ThrottleFetchOptions = {}
-): Promise<ThrottleEnvelope<T>> {
-  const json = await rawRequest(path, options)
-  return json as ThrottleEnvelope<T>
 }

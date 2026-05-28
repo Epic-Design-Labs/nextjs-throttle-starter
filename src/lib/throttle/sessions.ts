@@ -1,15 +1,8 @@
-import { env } from "@/lib/env"
-import { throttleFetch } from "./client"
-import type { ThrottleAddress, ThrottleEmbedSession } from "./types"
+import "server-only"
 
-function requireStoreId(): string {
-  if (!env.THROTTLE_STORE_ID) {
-    throw new Error(
-      "THROTTLE_STORE_ID is not set. Set it to the UUID of the Throttle store you want carts/orders written to."
-    )
-  }
-  return env.THROTTLE_STORE_ID
-}
+import { callThrottle } from "./client"
+import { getCheckoutClient, requireStoreId } from "./clients"
+import type { ThrottleAddress, ThrottleEmbedSession } from "./types"
 
 export interface CreateEmbedSessionInput {
   /** Amount in minor units (cents for USD). */
@@ -27,30 +20,35 @@ export interface CreateEmbedSessionInput {
 }
 
 /**
- * Mint a checkout session for the Throttle PaymentEmbed. The embed
- * mounts checkout.usethrottle.dev with this session id, and Throttle's
- * iframe handles PCI capture against the workspace's connected
- * payment provider.
+ * Mint a PaymentEmbed session via `@usethrottle/checkout-sdk`.
+ *
+ * Note: the SDK's `createEmbedToken` only accepts `{ amount, currency,
+ * country, externalCartId, allowedMethods }` — it does NOT take a
+ * storeId, customer info, or addresses. (The raw REST endpoint does.)
+ * That's a real SDK gap — see lib/throttle/feedback for details.
+ *
+ * For now we just call what the SDK gives us and ignore the unused
+ * inputs. Once the SDK exposes them, plumb them through here.
  */
-export function createEmbedSession(
+export async function createEmbedSession(
   input: CreateEmbedSessionInput
 ): Promise<ThrottleEmbedSession> {
-  return throttleFetch<ThrottleEmbedSession>(
-    "/checkout-sessions/embed-token",
-    {
-      method: "POST",
-      body: {
-        storeId: requireStoreId(),
-        amount: input.amount,
-        currency: input.currency,
-        country: input.country,
-        externalCartId: input.externalCartId,
-        customerEmail: input.customerEmail,
-        shippingAddress: input.shippingAddress,
-        billingAddress: input.billingAddress,
-        allowedMethods: input.allowedMethods,
-        metadata: input.metadata,
-      },
-    }
+  // Touch requireStoreId so an unconfigured workspace fails fast with a
+  // clearer message than the SDK's downstream 400.
+  requireStoreId()
+  const result = await callThrottle(() =>
+    getCheckoutClient().createEmbedToken({
+      amount: input.amount,
+      currency: input.currency,
+      country: input.country,
+      externalCartId: input.externalCartId,
+      allowedMethods: input.allowedMethods,
+    })
   )
+  return {
+    checkoutSessionId: result.checkoutSessionId,
+    embedToken: result.embedToken,
+    hostedUrl: result.hostedUrl,
+    embedUrl: result.embedUrl,
+  }
 }

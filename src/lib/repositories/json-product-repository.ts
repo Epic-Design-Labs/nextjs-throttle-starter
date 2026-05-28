@@ -148,4 +148,12 @@ export const jsonProductRepository: ProductRepository = {
     const filtered = applyFilters(products, { search: query })
     return paginate(filtered, pagination)
   },
+
+  async findVariant(variantId) {
+    for (const product of products) {
+      const variant = product.variants.find((v) => v.id === variantId)
+      if (variant) return { product, variant }
+    }
+    return null
+  },
 }

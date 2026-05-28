@@ -36,6 +36,8 @@ const AddressSchema = z.object({
 
 const BodySchema = z.object({
   cartId: z.string().optional(),
+  /** Throttle cart UUID built up incrementally by useCartStore. */
+  throttleCartId: z.string().uuid().optional(),
   items: z.array(ItemSchema).min(1),
   customer: z.object({
     email: z.string().email(),
@@ -91,6 +93,7 @@ export async function POST(req: NextRequest) {
         ...parsed.data.customer.shippingAddress,
         isDefault: true,
       },
+      throttleCartId: parsed.data.throttleCartId,
     })
     return NextResponse.json(session, { status: 201 })
   } catch (error) {
