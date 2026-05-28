@@ -6,6 +6,7 @@ const isProtectedRoute = createRouteMatcher([
   "/account(.*)",
   "/api/throttle/orders(.*)",
   "/api/throttle/customer-addresses(.*)",
+  "/api/throttle/subscriptions(.*)",
   "/api/auth/me",
 ])
 

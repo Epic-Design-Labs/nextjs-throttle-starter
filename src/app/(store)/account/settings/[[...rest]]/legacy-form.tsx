@@ -6,13 +6,11 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Separator } from "@/components/ui/separator"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { PageHeader } from "@/components/ui/page-header"
-import { useAuthGuard } from "@/hooks/use-auth-guard"
 import { useAuthStore } from "@/store/auth"
 import { toast } from "sonner"
 
-export default function SettingsPage() {
-  const { user, isReady } = useAuthGuard()
+export function LegacySettingsForm() {
+  const user = useAuthStore((s) => s.user)
   const updateProfile = useAuthStore((s) => s.updateProfile)
 
   const [firstName, setFirstName] = useState("")
@@ -27,8 +25,6 @@ export default function SettingsPage() {
     }
   }, [user])
 
-  if (!isReady) return null
-
   function handleSave(e: React.FormEvent) {
     e.preventDefault()
     updateProfile({ firstName, lastName, email })
@@ -36,9 +32,7 @@ export default function SettingsPage() {
   }
 
   return (
-    <div className="mx-auto max-w-3xl px-4 py-16 sm:px-6 lg:px-8">
-      <PageHeader title="Settings" />
-
+    <>
       <Card className="mt-8">
         <CardHeader>
           <CardTitle>Profile Information</CardTitle>
@@ -88,6 +82,6 @@ export default function SettingsPage() {
           </form>
         </CardContent>
       </Card>
-    </div>
+    </>
   )
 }
