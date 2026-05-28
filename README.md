@@ -53,13 +53,22 @@ Open [http://localhost:3000](http://localhost:3000).
 
 ### Required environment variables
 
+**Throttle (commerce)**
+
 | Var | Purpose |
 |-----|---------|
 | `THROTTLE_API_KEY` | Server-side secret key (`sk_…`) from the Throttle dashboard. Never expose to the browser. |
 | `THROTTLE_STORE_ID` | UUID of the Throttle store you want carts/orders attached to. |
 | `THROTTLE_WEBHOOK_SECRET` | Returned when you create a webhook endpoint. Verifies signatures on `/api/throttle/webhook`. |
 
-Without `THROTTLE_API_KEY` + `THROTTLE_STORE_ID` the starter falls back to a stub checkout provider so the UI keeps rendering — but no real cart, order, or payment is created.
+**Clerk (auth)**
+
+| Var | Purpose |
+|-----|---------|
+| `CLERK_SECRET_KEY` | Server-side secret key (`sk_…`) from your Clerk dashboard → API Keys. |
+| `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` | Browser-safe publishable key (`pk_…`) from the same dashboard page. |
+
+Without these the starter falls back to stub providers so the UI keeps rendering. **The order-read routes (`/api/throttle/orders*`) return 501 until Clerk is configured** — they refuse to identify the buyer from request input alone.
 
 ### Allow the embed origin
 
@@ -172,20 +181,54 @@ Key files:
 | `src/app/api/throttle/orders/[id]/route.ts` | Fetches a single order by id (success page). |
 | `src/components/checkout/throttle-payment-embed.tsx` | Wrapper around `@usethrottle/checkout-react`'s `PaymentEmbed`. |
 
-### ⚠️ Before deploying: wire real auth
+### Authentication (Clerk by default)
 
-The starter ships with a client-only Zustand auth store, so the order-read routes have **no way to authenticate the caller** server-side:
+The starter ships with a Clerk integration so the order-read routes can identify the buyer from a server-readable session instead of trusting client-supplied query params. The auth layer is intentionally pluggable — Clerk is the default, not a requirement.
 
-- `GET /api/throttle/orders?email=<x>` accepts any email from the query string (IDOR — anyone can enumerate any buyer's orders).
-- `GET /api/throttle/orders/[id]` returns any order by id with no ownership check.
+**Default flow (Clerk + Throttle customer mirror)**
 
-For that reason, both routes return **HTTP 501** when `NODE_ENV=production`. Before re-enabling them you must:
+1. Buyer signs in via `/auth/login` (renders Clerk's `<SignIn />`).
+2. On the first authenticated server call (`getCurrentUser()` in `src/lib/auth/clerk-provider.ts`):
+   - Looks up `privateMetadata.throttleCustomerId` on the Clerk user — fast path.
+   - If missing, calls Throttle's `GET /customers/by-external/{clerkUserId}` to recover.
+   - If no Throttle customer exists, `POST /customers` with the Clerk user's email + name and stores the new id back in Clerk metadata.
+3. `/api/throttle/orders*` reads that `throttleCustomerId` from the session and scopes queries to it. **No client-supplied email or customer id is ever trusted.**
 
-1. Wire a real auth provider (Clerk, Auth0, Better-Auth, etc.) so there is a server-readable session.
-2. Replace the `NODE_ENV === "production"` guards in `src/app/api/throttle/orders/route.ts` and `src/app/api/throttle/orders/[id]/route.ts` with a `getServerSession()`-style check.
-3. For the `[id]` route, verify the order's customer email/id matches the authenticated user before returning the payload.
+**Files involved**
 
-See the comment block at the top of each route for the exact code shape.
+| File | Purpose |
+|------|---------|
+| `src/lib/auth/types.ts` | `AuthProvider` interface — the seam other providers implement. |
+| `src/lib/auth/clerk-provider.ts` | Default Clerk impl. Lazily upserts Throttle customer + caches the link in `privateMetadata`. |
+| `src/lib/auth/demo-provider.ts` | Stub returned when Clerk isn't configured. `getCurrentUser()` is always `null`. |
+| `src/lib/auth/index.ts` | Picks the active provider based on env. |
+| `src/lib/throttle/customers.ts` | `createCustomer`, `getCustomer`, `getCustomerByExternalId`. |
+| `src/middleware.ts` | Composes `clerkMiddleware()` with the existing security headers; protects `/account/*` and `/api/throttle/orders/*`. |
+| `src/app/(store)/auth/{login,register}/[[...rest]]/page.tsx` | Catch-all routes that render Clerk's `<SignIn />` / `<SignUp />`. Demo form is the fallback when Clerk env is absent. |
+| `src/hooks/use-auth-guard.ts` / `src/hooks/use-current-user.ts` | Client-side hooks. Pick between Clerk + Zustand impls at module load so React's hook rules stay satisfied. |
+
+**Swapping to a different provider**
+
+Implement the `AuthProvider` interface and re-point the export in `src/lib/auth/index.ts`. You'll also need to replace the auth route pages with your provider's UI components. Both surfaces are small — the rest of the app only reads from the seam.
+
+```ts
+// src/lib/auth/types.ts
+export interface AuthProvider {
+  getCurrentUser(): Promise<AuthUser | null>
+}
+
+export interface AuthUser {
+  id: string                    // your provider's user id
+  email: string
+  firstName?: string
+  lastName?: string
+  throttleCustomerId?: string   // mirrored on first call
+}
+```
+
+**Admin gate**
+
+The admin section checks `user.role === "admin"`. Under Clerk, set the role on the user's `publicMetadata.role` from the Clerk dashboard. Under the demo provider, role lives on the Zustand user object (set via the demo accounts in `src/store/auth.ts`).
 
 ### Subscribing to webhooks
 

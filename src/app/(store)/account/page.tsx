@@ -1,13 +1,12 @@
 "use client"
 
 import Link from "next/link"
-import { useRouter } from "next/navigation"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { PageHeader } from "@/components/ui/page-header"
 import { Package, MapPin, Settings, Heart, LogOut } from "lucide-react"
 import { useAuthGuard } from "@/hooks/use-auth-guard"
-import { useAuthStore } from "@/store/auth"
+import { useCurrentUser } from "@/hooks/use-current-user"
 
 const accountLinks = [
   { name: "Orders", description: "View your order history and track shipments", href: "/account/orders", icon: Package },
@@ -18,15 +17,14 @@ const accountLinks = [
 
 export default function AccountPage() {
   const { user, isReady } = useAuthGuard()
-  const logout = useAuthStore((s) => s.logout)
-  const router = useRouter()
+  const { signOut } = useCurrentUser()
 
   if (!isReady) return null
 
   return (
     <div className="mx-auto max-w-3xl px-4 py-16 sm:px-6 lg:px-8">
-      <PageHeader title="My Account" description={`Welcome back, ${user?.firstName}!`}>
-        <Button variant="outline" onClick={() => { logout(); router.push("/") }}>
+      <PageHeader title="My Account" description={`Welcome back, ${user?.firstName ?? "friend"}!`}>
+        <Button variant="outline" onClick={() => { void signOut() }}>
           <LogOut className="mr-2 h-4 w-4" />
           Sign Out
         </Button>

@@ -6,12 +6,11 @@ import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { AuthCardLayout } from "@/components/auth/auth-card-layout"
 import { useAuthStore } from "@/store/auth"
 import { toast } from "sonner"
 import { loginSchema } from "@/lib/validators"
 
-export default function LoginPage() {
+export function LegacyLoginForm() {
   const router = useRouter()
   const login = useAuthStore((s) => s.login)
   const [email, setEmail] = useState("")
@@ -37,13 +36,7 @@ export default function LoginPage() {
   }
 
   return (
-    <AuthCardLayout
-      title="Welcome back"
-      subtitle="Sign in to your account to continue"
-      footerText="Don't have an account?"
-      footerLinkText="Sign up"
-      footerLinkHref="/auth/register"
-    >
+    <>
       <form onSubmit={handleSubmit} className="space-y-4">
         <div className="space-y-2">
           <Label htmlFor="email">Email</Label>
@@ -64,11 +57,11 @@ export default function LoginPage() {
       </form>
       <div className="mt-4 rounded-md bg-neutral-50 p-3">
         <p className="text-xs text-muted-foreground">
-          <strong>Demo accounts:</strong><br />
+          <strong>Demo accounts (offline mock):</strong><br />
           admin@example.com / password123<br />
           demo@example.com / password123
         </p>
       </div>
-    </AuthCardLayout>
+    </>
   )
 }

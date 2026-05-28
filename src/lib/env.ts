@@ -22,6 +22,10 @@ const envSchema = z.object({
     .url()
     .default("https://checkout.usethrottle.dev"),
   NEXT_PUBLIC_THROTTLE_PARENT_ORIGIN: z.string().url().optional(),
+
+  // Clerk — clerk.com (default auth provider)
+  CLERK_SECRET_KEY: z.string().startsWith("sk_").optional(),
+  NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: z.string().startsWith("pk_").optional(),
 })
 
 export type Env = z.infer<typeof envSchema>

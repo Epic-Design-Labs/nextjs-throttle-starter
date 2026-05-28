@@ -1,9 +1,11 @@
 import type { Metadata } from "next"
 import { Inter } from "next/font/google"
+import { ClerkProvider } from "@clerk/nextjs"
 import { NextIntlClientProvider } from "next-intl"
 import { getLocale, getMessages } from "next-intl/server"
 import { Toaster } from "sonner"
 import { siteConfig } from "@/lib/config"
+import { isClerkConfigured } from "@/lib/auth"
 import "./globals.css"
 
 const inter = Inter({
@@ -52,7 +54,7 @@ export default async function RootLayout({
   const locale = await getLocale()
   const messages = await getMessages()
 
-  return (
+  const body = (
     <html lang={locale} className={`${inter.variable} h-full antialiased`}>
       <body className="min-h-full flex flex-col bg-white">
         <script
@@ -68,4 +70,9 @@ export default async function RootLayout({
       </body>
     </html>
   )
+
+  // Only mount ClerkProvider when Clerk is configured. Without keys
+  // the provider would still mount but render auth components in a
+  // permanent loading state — confusing for offline / starter-preview.
+  return isClerkConfigured ? <ClerkProvider>{body}</ClerkProvider> : body
 }

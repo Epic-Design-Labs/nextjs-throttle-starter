@@ -34,10 +34,13 @@ export default function OrdersPage() {
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
-    if (!isReady || !user?.email) return
+    if (!isReady) return
     let cancelled = false
     setError(null)
-    fetch(`/api/throttle/orders?email=${encodeURIComponent(user.email)}&limit=25`)
+    // The server route derives the customer id from the Clerk session
+    // — no client-supplied filter needed (and accepting one would
+    // reopen the IDOR that earlier dev-only guard was hiding).
+    fetch(`/api/throttle/orders?limit=25`)
       .then(async (res) => {
         if (!res.ok) {
           const payload = (await res.json().catch(() => null)) as
@@ -59,7 +62,7 @@ export default function OrdersPage() {
     return () => {
       cancelled = true
     }
-  }, [isReady, user?.email])
+  }, [isReady])
 
   if (!isReady) return null
   if (orders === null) {

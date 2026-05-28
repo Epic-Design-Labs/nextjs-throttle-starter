@@ -21,9 +21,9 @@ export default function SettingsPage() {
 
   useEffect(() => {
     if (user) {
-      setFirstName(user.firstName)
-      setLastName(user.lastName)
-      setEmail(user.email)
+      setFirstName(user.firstName ?? "")
+      setLastName(user.lastName ?? "")
+      setEmail(user.email ?? "")
     }
   }, [user])
 

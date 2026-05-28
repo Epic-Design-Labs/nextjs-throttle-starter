@@ -14,7 +14,12 @@ import { useAuthStore } from "@/store/auth"
 import { toast } from "sonner"
 
 export default function AddressesPage() {
-  const { user, isReady } = useAuthGuard()
+  const { isReady } = useAuthGuard()
+  // Addresses live in the local Zustand store regardless of auth
+  // provider — Throttle has a customer-addresses API but we haven't
+  // wired sync yet, so this page is local-first. Reads of the address
+  // list and CRUD all go through useAuthStore for now.
+  const localUser = useAuthStore((s) => s.user)
   const addAddress = useAuthStore((s) => s.addAddress)
   const removeAddress = useAuthStore((s) => s.removeAddress)
   const [showForm, setShowForm] = useState(false)
@@ -41,14 +46,14 @@ export default function AddressesPage() {
       state: form.state,
       postalCode: form.postalCode,
       country: form.country,
-      isDefault: (user?.addresses.length ?? 0) === 0,
+      isDefault: (localUser?.addresses.length ?? 0) === 0,
     })
     toast.success("Address added")
     setShowForm(false)
     setForm({ firstName: "", lastName: "", line1: "", line2: "", city: "", state: "", postalCode: "", country: "US" })
   }
 
-  const addresses = user?.addresses ?? []
+  const addresses = localUser?.addresses ?? []
 
   return (
     <div className="mx-auto max-w-3xl px-4 py-16 sm:px-6 lg:px-8">
