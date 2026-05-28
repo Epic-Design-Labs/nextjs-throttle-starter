@@ -1,8 +1,8 @@
-# Next.js Ecommerce Starter
+# Next.js + Throttle Ecommerce Starter
 
-A free, open-source, production-ready ecommerce starter template built with **Next.js**, **Tailwind CSS**, and **shadcn/ui**. Designed to work standalone or connect to any checkout/payment system.
+A free, open-source, production-ready ecommerce starter built with **Next.js**, **Tailwind CSS**, and **shadcn/ui**, pre-integrated with **[Throttle](https://usethrottle.dev)** as the commerce engine for carts, checkout sessions, payments, and orders.
 
-**[Live Demo](https://nextjsecommercestarter.com)** · **[Documentation](docs/CUSTOMIZATION.md)** · **[Report Issue](https://github.com/Epic-Design-Labs/nextjs-ecommerce-starter/issues)**
+**[Throttle Docs](https://docs.usethrottle.dev)** · **[Live Demo](https://nextjsecommercestarter.com)** · **[Customization Guide](docs/CUSTOMIZATION.md)** · **[Report Issue](https://github.com/Epic-Design-Labs/nextjs-ecommerce-starter/issues)**
 
 Built by [Epic Design Labs](https://epicdesignlabs.com)
 
@@ -43,11 +43,34 @@ Built by [Epic Design Labs](https://epicdesignlabs.com)
 # Requires Node.js 20+
 git clone https://github.com/Epic-Design-Labs/nextjs-ecommerce-starter.git
 cd nextjs-ecommerce-starter
+cp .env.local.example .env.local
+# Fill in THROTTLE_API_KEY + THROTTLE_STORE_ID from https://app.usethrottle.dev
 npm install
 npm run dev
 ```
 
 Open [http://localhost:3000](http://localhost:3000).
+
+### Required environment variables
+
+| Var | Purpose |
+|-----|---------|
+| `THROTTLE_API_KEY` | Server-side secret key (`sk_…`) from the Throttle dashboard. Never expose to the browser. |
+| `THROTTLE_STORE_ID` | UUID of the Throttle store you want carts/orders attached to. |
+| `THROTTLE_WEBHOOK_SECRET` | Returned when you create a webhook endpoint. Verifies signatures on `/api/throttle/webhook`. |
+
+Without `THROTTLE_API_KEY` + `THROTTLE_STORE_ID` the starter falls back to a stub checkout provider so the UI keeps rendering — but no real cart, order, or payment is created.
+
+### Allow the embed origin
+
+Throttle's `PaymentEmbed` only mounts when its `parentOrigin` is in your store's allow-list. Add your dev + production origins via the dashboard's Embed Config page or:
+
+```bash
+curl -X PUT https://api.usethrottle.dev/api/v1/embed-config \
+  -H "x-api-key: $THROTTLE_API_KEY" \
+  -H "content-type: application/json" \
+  -d '{"allowed_origins":["http://localhost:3000","https://your-prod-domain.com"]}'
+```
 
 ### Demo Accounts
 
@@ -112,9 +135,75 @@ Everything is configurable from a few key files:
 
 See [CUSTOMIZATION.md](docs/CUSTOMIZATION.md) for the full guide.
 
-## Connecting a Payment Provider
+## How the Throttle integration works
 
-The checkout uses a pluggable `CheckoutProvider` interface:
+```
+[Buyer]  → /checkout (shipping form)
+         → POST /api/throttle/checkout-session
+              ├─ POST /api/v1/carts                  (create Throttle cart)
+              ├─ POST /api/v1/carts/{id}/items × N   (sync line items)
+              ├─ POST /api/v1/carts/{id}/checkout    (cart → draft order)
+              └─ POST /api/v1/checkout-sessions/embed-token
+         ← { checkoutSessionId, embedUrl, orderId }
+         → Mounts <PaymentEmbed sessionId=... /> from
+           `@usethrottle/checkout-react`
+         → Throttle iframe captures payment via the connected provider
+         → `onSucceeded` → /checkout/success?order_id=...
+                            ↑ fetches order from /api/throttle/orders/[id]
+
+[Throttle] → POST /api/throttle/webhook
+              ├─ HMAC-SHA256 verify against THROTTLE_WEBHOOK_SECRET
+              └─ fan out to per-event handlers (order.*, payment.*)
+```
+
+Key files:
+
+| File | Purpose |
+|------|---------|
+| `src/lib/throttle/client.ts` | Auth + JSON-envelope fetch wrapper for `https://api.usethrottle.dev`. |
+| `src/lib/throttle/cart.ts` | `createCart`, `addCartItems`, `checkoutCart`. |
+| `src/lib/throttle/sessions.ts` | `createEmbedSession` for the PaymentEmbed. |
+| `src/lib/throttle/orders.ts` | `getOrder`, `listOrders` with cursor pagination. |
+| `src/lib/throttle/webhook.ts` | `verifyThrottleSignature` (`X-Throttle-Signature`). |
+| `src/lib/throttle/checkout-provider.ts` | Implements the starter's `CheckoutProvider` interface against Throttle. |
+| `src/app/api/throttle/checkout-session/route.ts` | Server route the checkout page calls. |
+| `src/app/api/throttle/webhook/route.ts` | Signature-verified webhook receiver. |
+| `src/app/api/throttle/orders/route.ts` | Lists orders by buyer email for the account dashboard. |
+| `src/app/api/throttle/orders/[id]/route.ts` | Fetches a single order by id (success page). |
+| `src/components/checkout/throttle-payment-embed.tsx` | Wrapper around `@usethrottle/checkout-react`'s `PaymentEmbed`. |
+
+### ⚠️ Before deploying: wire real auth
+
+The starter ships with a client-only Zustand auth store, so the order-read routes have **no way to authenticate the caller** server-side:
+
+- `GET /api/throttle/orders?email=<x>` accepts any email from the query string (IDOR — anyone can enumerate any buyer's orders).
+- `GET /api/throttle/orders/[id]` returns any order by id with no ownership check.
+
+For that reason, both routes return **HTTP 501** when `NODE_ENV=production`. Before re-enabling them you must:
+
+1. Wire a real auth provider (Clerk, Auth0, Better-Auth, etc.) so there is a server-readable session.
+2. Replace the `NODE_ENV === "production"` guards in `src/app/api/throttle/orders/route.ts` and `src/app/api/throttle/orders/[id]/route.ts` with a `getServerSession()`-style check.
+3. For the `[id]` route, verify the order's customer email/id matches the authenticated user before returning the payload.
+
+See the comment block at the top of each route for the exact code shape.
+
+### Subscribing to webhooks
+
+```bash
+curl -X POST https://api.usethrottle.dev/api/v1/webhook-endpoints \
+  -H "x-api-key: $THROTTLE_API_KEY" \
+  -H "content-type: application/json" \
+  -d '{
+    "url": "https://your-domain.com/api/throttle/webhook",
+    "enabled_events": ["order.created", "order.completed", "payment.captured", "payment.failed"]
+  }'
+```
+
+Copy the returned `secret` into `THROTTLE_WEBHOOK_SECRET`.
+
+### Swapping the engine
+
+`src/lib/checkout/index.ts` picks the active provider based on env. To swap to Stripe (or any other system), implement the `CheckoutProvider` interface and export it from there.
 
 ```typescript
 interface CheckoutProvider {
@@ -123,8 +212,6 @@ interface CheckoutProvider {
   handleWebhook(payload, signature): Promise<WebhookResult>
 }
 ```
-
-Ships with a demo provider. To connect Stripe or any other payment system, implement the interface and swap the export in `src/lib/checkout/index.ts`.
 
 ## Pages
 

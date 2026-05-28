@@ -9,33 +9,49 @@ import { Label } from "@/components/ui/label"
 import { Separator } from "@/components/ui/separator"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { useCartStore } from "@/store/cart"
-import { useOrdersStore } from "@/store/orders"
 import { CartSummary } from "@/components/cart/cart-summary"
+import { ThrottlePaymentEmbed } from "@/components/checkout/throttle-payment-embed"
 import { formatPrice } from "@/lib/utils"
 import { toast } from "sonner"
-import { siteConfig } from "@/lib/config"
-import type { Order } from "@/types"
+import type { CheckoutSession } from "@/types"
+
+const CHECKOUT_BASE_URL =
+  process.env.NEXT_PUBLIC_THROTTLE_CHECKOUT_URL ?? "https://checkout.usethrottle.dev"
+const PARENT_ORIGIN_OVERRIDE = process.env.NEXT_PUBLIC_THROTTLE_PARENT_ORIGIN
+
+interface ShippingForm {
+  email: string
+  firstName: string
+  lastName: string
+  line1: string
+  line2: string
+  city: string
+  state: string
+  postalCode: string
+  country: string
+}
+
+const EMPTY_FORM: ShippingForm = {
+  email: "",
+  firstName: "",
+  lastName: "",
+  line1: "",
+  line2: "",
+  city: "",
+  state: "",
+  postalCode: "",
+  country: "US",
+}
 
 export default function CheckoutPage() {
   const router = useRouter()
   const items = useCartStore((s) => s.items)
   const getSubtotal = useCartStore((s) => s.getSubtotal)
   const clearCart = useCartStore((s) => s.clearCart)
-  const addOrder = useOrdersStore((s) => s.addOrder)
   const [mounted, setMounted] = useState(false)
-  const [loading, setLoading] = useState(false)
-
-  const [form, setForm] = useState({
-    email: "",
-    firstName: "",
-    lastName: "",
-    line1: "",
-    line2: "",
-    city: "",
-    state: "",
-    postalCode: "",
-    country: "US",
-  })
+  const [submitting, setSubmitting] = useState(false)
+  const [form, setForm] = useState<ShippingForm>(EMPTY_FORM)
+  const [session, setSession] = useState<CheckoutSession | null>(null)
 
   useEffect(() => setMounted(true), [])
 
@@ -47,7 +63,7 @@ export default function CheckoutPage() {
     )
   }
 
-  if (items.length === 0) {
+  if (items.length === 0 && !session) {
     return (
       <div className="mx-auto max-w-3xl px-4 py-16 sm:px-6 lg:px-8">
         <h1 className="text-3xl font-bold tracking-tight">Checkout</h1>
@@ -71,65 +87,102 @@ export default function CheckoutPage() {
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
-
-    if (!form.email || !form.firstName || !form.lastName || !form.line1 || !form.city || !form.state || !form.postalCode) {
+    if (
+      !form.email ||
+      !form.firstName ||
+      !form.lastName ||
+      !form.line1 ||
+      !form.city ||
+      !form.state ||
+      !form.postalCode
+    ) {
       toast.error("Please fill in all required fields")
       return
     }
 
-    setLoading(true)
+    setSubmitting(true)
+    try {
+      const res = await fetch("/api/throttle/checkout-session", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          items,
+          customer: {
+            email: form.email,
+            shippingAddress: {
+              firstName: form.firstName,
+              lastName: form.lastName,
+              line1: form.line1,
+              line2: form.line2 || undefined,
+              city: form.city,
+              state: form.state,
+              postalCode: form.postalCode,
+              country: form.country,
+            },
+          },
+        }),
+      })
 
-    // Create order using demo checkout
-    const shipping = subtotal >= siteConfig.freeShippingThreshold ? 0 : 599
-    const tax = Math.round(subtotal * siteConfig.taxRate)
-    const total = subtotal + shipping + tax
-    const orderId = `ORD-${Date.now().toString(36).toUpperCase()}`
+      if (!res.ok) {
+        const payload = (await res.json().catch(() => null)) as
+          | { error?: { message?: string } }
+          | null
+        throw new Error(
+          payload?.error?.message ??
+            "Could not create the Throttle checkout session."
+        )
+      }
 
-    const order: Order = {
-      id: orderId,
-      orderNumber: orderId,
-      items: items.map((item) => ({
-        id: item.id,
-        productId: item.productId,
-        variantId: item.variantId,
-        name: item.name,
-        variantName: item.variantName,
-        sku: "",
-        image: item.image,
-        price: item.price,
-        quantity: item.quantity,
-        total: item.lineTotal,
-      })),
-      status: "processing",
-      paymentStatus: "captured",
-      subtotal,
-      tax,
-      shipping,
-      total,
-      currency: "USD",
-      shippingAddress: {
-        id: "addr-1",
-        type: "shipping",
-        firstName: form.firstName,
-        lastName: form.lastName,
-        line1: form.line1,
-        line2: form.line2 || undefined,
-        city: form.city,
-        state: form.state,
-        postalCode: form.postalCode,
-        country: form.country,
-        isDefault: true,
-      },
-      customerEmail: form.email,
-      customerName: `${form.firstName} ${form.lastName}`,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
+      const checkoutSession = (await res.json()) as CheckoutSession
+      setSession(checkoutSession)
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Checkout failed."
+      toast.error(message)
+    } finally {
+      setSubmitting(false)
     }
+  }
 
-    addOrder(order)
-    clearCart()
-    toast.success("Order placed successfully!")
-    router.push(`/checkout/success?order_id=${orderId}`)
+  if (session) {
+    return (
+      <div className="mx-auto max-w-3xl px-4 py-8 sm:px-6 lg:px-8">
+        <h1 className="text-3xl font-bold tracking-tight">Checkout</h1>
+        <p className="mt-2 text-sm text-muted-foreground">
+          Order {session.metadata?.orderNumber ?? session.orderId}
+        </p>
+
+        <Card className="mt-8">
+          <CardHeader>
+            <CardTitle className="text-lg">Payment</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <ThrottlePaymentEmbed
+              sessionId={session.id}
+              baseUrl={CHECKOUT_BASE_URL}
+              parentOrigin={PARENT_ORIGIN_OVERRIDE}
+              onSucceeded={({ orderId }) => {
+                clearCart()
+                router.push(`/checkout/success?order_id=${orderId}`)
+              }}
+              onFailed={({ message }) => toast.error(message)}
+              onCanceled={() => {
+                setSession(null)
+                toast.info("Payment cancelled.")
+              }}
+            />
+          </CardContent>
+        </Card>
+
+        <button
+          type="button"
+          onClick={() => setSession(null)}
+          className="mt-4 text-sm text-muted-foreground underline-offset-4 hover:underline"
+        >
+          ← Edit shipping details
+        </button>
+      </div>
+    )
   }
 
   return (
@@ -137,9 +190,7 @@ export default function CheckoutPage() {
       <h1 className="text-3xl font-bold tracking-tight">Checkout</h1>
 
       <form onSubmit={handleSubmit} className="mt-8 grid gap-8 lg:grid-cols-5">
-        {/* Form */}
         <div className="space-y-8 lg:col-span-3">
-          {/* Contact */}
           <Card>
             <CardHeader>
               <CardTitle className="text-lg">Contact Information</CardTitle>
@@ -160,7 +211,6 @@ export default function CheckoutPage() {
             </CardContent>
           </Card>
 
-          {/* Shipping */}
           <Card>
             <CardHeader>
               <CardTitle className="text-lg">Shipping Address</CardTitle>
@@ -201,21 +251,19 @@ export default function CheckoutPage() {
             </CardContent>
           </Card>
 
-          {/* Payment note */}
           <Card>
             <CardHeader>
               <CardTitle className="text-lg">Payment</CardTitle>
             </CardHeader>
             <CardContent>
               <p className="text-sm text-muted-foreground">
-                This is a demo store. No real payment will be processed.
-                In production, this section connects to your payment provider.
+                Card details are collected by Throttle&apos;s PCI-scoped iframe
+                on the next step. Submit your shipping details to continue.
               </p>
             </CardContent>
           </Card>
         </div>
 
-        {/* Order Summary */}
         <div className="lg:col-span-2">
           <Card className="sticky top-24">
             <CardHeader>
@@ -232,8 +280,8 @@ export default function CheckoutPage() {
               ))}
               <Separator />
               <CartSummary subtotal={subtotal} />
-              <Button type="submit" size="lg" className="w-full" disabled={loading}>
-                {loading ? "Processing..." : "Place Order"}
+              <Button type="submit" size="lg" className="w-full" disabled={submitting}>
+                {submitting ? "Creating session..." : "Continue to Payment"}
               </Button>
             </CardContent>
           </Card>

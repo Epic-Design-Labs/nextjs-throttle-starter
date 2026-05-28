@@ -1,20 +1,27 @@
 import { z } from "zod"
 
 // Validate environment variables at build/startup time.
-// Add required vars here as you integrate real services.
+// Throttle keys are *optional* here so the starter still boots without
+// them — the Throttle library throws a clear runtime error if a server
+// request is attempted without a key.
 
 const envSchema = z.object({
-  // Required
   NODE_ENV: z.enum(["development", "production", "test"]).default("development"),
-
-  // Optional — add validation as you integrate services
   NEXT_PUBLIC_BASE_URL: z.string().url().optional(),
 
-  // Uncomment when integrating a payment provider:
-  // STRIPE_SECRET_KEY: z.string().startsWith("sk_"),
-  // NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY: z.string().startsWith("pk_"),
-  // STRIPE_WEBHOOK_SECRET: z.string().startsWith("whsec_"),
-
+  // Throttle — usethrottle.dev
+  THROTTLE_API_KEY: z.string().startsWith("sk_").optional(),
+  THROTTLE_STORE_ID: z.string().uuid().optional(),
+  THROTTLE_WEBHOOK_SECRET: z.string().optional(),
+  THROTTLE_API_BASE_URL: z
+    .string()
+    .url()
+    .default("https://api.usethrottle.dev"),
+  NEXT_PUBLIC_THROTTLE_CHECKOUT_URL: z
+    .string()
+    .url()
+    .default("https://checkout.usethrottle.dev"),
+  NEXT_PUBLIC_THROTTLE_PARENT_ORIGIN: z.string().url().optional(),
 })
 
 export type Env = z.infer<typeof envSchema>

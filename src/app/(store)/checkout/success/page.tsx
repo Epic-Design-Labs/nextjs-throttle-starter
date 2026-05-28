@@ -7,8 +7,8 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { Separator } from "@/components/ui/separator"
 import { CheckCircle } from "lucide-react"
-import { useOrdersStore } from "@/store/orders"
 import { formatPrice, formatDate } from "@/lib/utils"
+import type { ThrottleOrder } from "@/lib/throttle"
 
 export default function CheckoutSuccessPage() {
   return (
@@ -21,22 +21,43 @@ export default function CheckoutSuccessPage() {
 function CheckoutSuccessContent() {
   const searchParams = useSearchParams()
   const orderId = searchParams.get("order_id")
-  const getOrderById = useOrdersStore((s) => s.getOrderById)
 
-  const [mounted, setMounted] = useState(false)
-  useEffect(() => setMounted(true), [])
+  const [order, setOrder] = useState<ThrottleOrder | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
 
-  if (!mounted) {
-    return (
-      <div className="mx-auto max-w-3xl px-4 py-16 sm:px-6 lg:px-8">
-        <div className="text-center">
-          <h1 className="text-3xl font-bold tracking-tight">Loading...</h1>
-        </div>
-      </div>
-    )
-  }
-
-  const order = orderId ? getOrderById(orderId) : undefined
+  useEffect(() => {
+    if (!orderId) {
+      setLoading(false)
+      return
+    }
+    let cancelled = false
+    setLoading(true)
+    fetch(`/api/throttle/orders/${encodeURIComponent(orderId)}`)
+      .then(async (res) => {
+        if (!res.ok) {
+          const payload = (await res.json().catch(() => null)) as
+            | { error?: { message?: string } }
+            | null
+          throw new Error(
+            payload?.error?.message ?? "Could not load order details."
+          )
+        }
+        return (await res.json()) as { order: ThrottleOrder }
+      })
+      .then(({ order }) => {
+        if (!cancelled) setOrder(order)
+      })
+      .catch((err: Error) => {
+        if (!cancelled) setError(err.message)
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [orderId])
 
   return (
     <div className="mx-auto max-w-3xl px-4 py-16 sm:px-6 lg:px-8">
@@ -50,6 +71,14 @@ function CheckoutSuccessContent() {
           tracking details once it ships.
         </p>
 
+        {loading && (
+          <p className="mt-8 text-sm text-muted-foreground">Loading order…</p>
+        )}
+
+        {error && (
+          <p className="mt-8 text-sm text-destructive">{error}</p>
+        )}
+
         {order && (
           <Card className="mt-8 w-full text-left">
             <CardContent className="pt-6 space-y-4">
@@ -62,7 +91,7 @@ function CheckoutSuccessContent() {
                 <span>{formatDate(order.createdAt)}</span>
               </div>
               <Separator />
-              {order.items.map((item) => (
+              {order.lineItems?.map((item) => (
                 <div key={item.id} className="flex justify-between text-sm">
                   <span className="text-muted-foreground">
                     {item.name} &times; {item.quantity}
@@ -77,11 +106,15 @@ function CheckoutSuccessContent() {
               </div>
               <div className="flex justify-between text-sm">
                 <span className="text-muted-foreground">Shipping</span>
-                <span>{order.shipping === 0 ? "Free" : formatPrice(order.shipping)}</span>
+                <span>
+                  {order.shippingTotal === 0
+                    ? "Free"
+                    : formatPrice(order.shippingTotal)}
+                </span>
               </div>
               <div className="flex justify-between text-sm">
                 <span className="text-muted-foreground">Tax</span>
-                <span>{formatPrice(order.tax)}</span>
+                <span>{formatPrice(order.taxTotal)}</span>
               </div>
               <Separator />
               <div className="flex justify-between font-medium">
