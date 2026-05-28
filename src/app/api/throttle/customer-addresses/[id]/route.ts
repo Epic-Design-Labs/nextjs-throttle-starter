@@ -7,6 +7,7 @@ import {
   updateAddress,
 } from "@/lib/throttle/customer-addresses"
 import { ThrottleApiError } from "@/lib/throttle"
+import { requireUuid } from "@/lib/http/validate"
 
 const PatchSchema = z.object({
   label: z.string().optional(),
@@ -57,7 +58,9 @@ export async function PATCH(
 ) {
   const result = await requireCustomerId()
   if (result instanceof NextResponse) return result
-  const { id } = await params
+  const { id: rawId } = await params
+  const id = requireUuid(rawId, "addressId")
+  if (id instanceof NextResponse) return id
 
   let body: unknown
   try {
@@ -106,7 +109,9 @@ export async function DELETE(
 ) {
   const result = await requireCustomerId()
   if (result instanceof NextResponse) return result
-  const { id } = await params
+  const { id: rawId } = await params
+  const id = requireUuid(rawId, "addressId")
+  if (id instanceof NextResponse) return id
 
   try {
     await deleteAddress(result, id)

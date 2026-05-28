@@ -3,6 +3,7 @@ import { z } from "zod"
 import { env } from "@/lib/env"
 import { ThrottleApiError, addCartItem } from "@/lib/throttle"
 import { productRepository } from "@/lib/repositories"
+import { requireUuid } from "@/lib/http/validate"
 
 // Price and display name come from the server-side catalog, NEVER from
 // the client. Accepting `unitPrice` from the request body would let
@@ -23,7 +24,12 @@ export async function POST(
       { status: 503 }
     )
   }
-  const { cartId } = await params
+  const { cartId: rawCartId } = await params
+  // Validate before interpolating — @usethrottle/cart's SDK builds URLs
+  // by string template without encoding, so a non-UUID segment could
+  // redirect the upstream call into another endpoint.
+  const cartId = requireUuid(rawCartId, "cartId")
+  if (cartId instanceof NextResponse) return cartId
 
   let body: unknown
   try {

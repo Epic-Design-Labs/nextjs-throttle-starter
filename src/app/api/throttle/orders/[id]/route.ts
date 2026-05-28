@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from "next/server"
 import { ThrottleApiError, getOrder } from "@/lib/throttle"
 import { env } from "@/lib/env"
 import { authProvider, isClerkConfigured } from "@/lib/auth"
+import { requireUuid } from "@/lib/http/validate"
 
 export async function GET(
   _req: NextRequest,
@@ -35,7 +36,10 @@ export async function GET(
     )
   }
 
-  const { id } = await params
+  const { id: rawId } = await params
+  const id = requireUuid(rawId, "orderId")
+  if (id instanceof NextResponse) return id
+
   try {
     const order = await getOrder(id)
     // Ownership check — never return an order whose customer doesn't

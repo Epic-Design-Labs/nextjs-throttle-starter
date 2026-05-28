@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from "next/server"
 import { z } from "zod"
 import { env } from "@/lib/env"
 import { ThrottleApiError, removeCartItem, updateCartItem } from "@/lib/throttle"
+import { requireUuid } from "@/lib/http/validate"
 
 // Quantity is the ONLY field the client may mutate. unitPrice / name /
 // referenceId are intentionally not editable from the request body —
@@ -25,7 +26,11 @@ export async function PATCH(
       { status: 503 }
     )
   }
-  const { cartId, itemId } = await params
+  const { cartId: rawCartId, itemId: rawItemId } = await params
+  const cartId = requireUuid(rawCartId, "cartId")
+  if (cartId instanceof NextResponse) return cartId
+  const itemId = requireUuid(rawItemId, "itemId")
+  if (itemId instanceof NextResponse) return itemId
 
   let body: unknown
   try {
@@ -79,7 +84,11 @@ export async function DELETE(
       { status: 503 }
     )
   }
-  const { cartId, itemId } = await params
+  const { cartId: rawCartId, itemId: rawItemId } = await params
+  const cartId = requireUuid(rawCartId, "cartId")
+  if (cartId instanceof NextResponse) return cartId
+  const itemId = requireUuid(rawItemId, "itemId")
+  if (itemId instanceof NextResponse) return itemId
 
   try {
     await removeCartItem(cartId, itemId)

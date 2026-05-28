@@ -207,9 +207,13 @@ export async function updateAddress(
     phone: input.phone,
     is_default: input.isDefault,
   }
+  // encodeURIComponent both segments even though the route handler
+  // already validates them as UUIDs — defense in depth. If validation
+  // ever regresses, this still prevents path traversal into other
+  // Throttle endpoints (`../subscriptions/cancel-all` etc).
   const raw = await directRequest<RawAddress>(
     "PATCH",
-    `/api/v1/customers/${customerId}/addresses/${addressId}`,
+    `/api/v1/customers/${encodeURIComponent(customerId)}/addresses/${encodeURIComponent(addressId)}`,
     body
   )
   return normaliseAddress(raw ?? {})
@@ -221,6 +225,6 @@ export async function deleteAddress(
 ): Promise<void> {
   await directRequest<void>(
     "DELETE",
-    `/api/v1/customers/${customerId}/addresses/${addressId}`
+    `/api/v1/customers/${encodeURIComponent(customerId)}/addresses/${encodeURIComponent(addressId)}`
   )
 }
