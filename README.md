@@ -9,11 +9,12 @@ Built by [Epic Design Labs](https://epicdesignlabs.com)
 ## Features
 
 - **Product Catalog** — Browse, filter, sort, search across 14 demo products in 5 categories
-- **Shopping Cart** — Slide-out drawer, quantity controls, persisted to localStorage
+- **Shopping Cart** — Slide-out drawer with optimistic UI, **synced to Throttle in real time** (cart materialises in Throttle on the first add and stays in sync through every quantity / remove)
 - **Wishlist** — Save products with heart icons, persisted to localStorage
-- **Checkout** — Full checkout flow with shipping form and order creation
-- **Authentication** — Login, register, forgot password with demo accounts
-- **Account** — Order history, saved addresses, profile settings
+- **Checkout** — Throttle [`PaymentEmbed`](https://docs.usethrottle.dev/developers/embedded-checkout) iframe, **shipping form prefilled from the signed-in buyer's saved address**, server-side pricing (no client tampering)
+- **Authentication** — [Clerk](https://clerk.com) by default with a pluggable `AuthProvider` port; legacy mock auth as a fallback when Clerk env is absent
+- **Customer mirror** — Clerk users automatically upserted as Throttle customers (lazy on first server call, plus a `user.created` webhook for SSO / dashboard creations)
+- **Account** — Order history scoped to the signed-in buyer's Throttle `customerId`, saved addresses **stored on the Throttle customer record**, profile settings
 - **Brands** — Brand pages with product filtering
 - **Subcategories** — Nested categories with accordion mobile menu
 - **Search** — Cmd+K modal with instant results and popular searches
@@ -24,15 +25,17 @@ Built by [Epic Design Labs](https://epicdesignlabs.com)
 - **Accessibility** — Skip-to-content, focus traps, ARIA labels, keyboard navigation, 44px touch targets
 - **i18n** — next-intl with English and Spanish translations
 - **Responsive** — Mobile-first design, 1440px max-width, full-width cart/menu on mobile
-- **Security** — CSP, HSTS, X-Frame-Options, and more via middleware
+- **Security** — server-side pricing (no IDOR), UUID validation at every dynamic route boundary (no SSRF), HMAC-SHA256 verification on both Throttle and Clerk webhooks, CSP/HSTS/X-Frame-Options via composed middleware
 
 ## Tech Stack
 
 - **Next.js 16** (App Router, React Server Components)
 - **TypeScript**
 - **Tailwind CSS v4** + **shadcn/ui**
-- **Zustand** (cart, wishlist, auth, orders — persisted to localStorage)
-- **Zod** (form validation)
+- **[Throttle SDKs](https://www.npmjs.com/org/usethrottle)** — `@usethrottle/cart`, `@usethrottle/checkout-sdk`, `@usethrottle/checkout-react`, `@usethrottle/api-client`
+- **[Clerk](https://clerk.com)** (`@clerk/nextjs`) — default auth provider, swappable
+- **Zustand** (client cart UX state + legacy auth fallback)
+- **Zod** (form / route-handler validation)
 - **next-intl** (internationalization)
 - **Sonner** (toast notifications)
 - **Inter** (Google Font via next/font)
@@ -63,12 +66,15 @@ Open [http://localhost:3000](http://localhost:3000).
 
 **Clerk (auth)**
 
-| Var | Purpose |
-|-----|---------|
-| `CLERK_SECRET_KEY` | Server-side secret key (`sk_…`) from your Clerk dashboard → API Keys. |
-| `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` | Browser-safe publishable key (`pk_…`) from the same dashboard page. |
+| Var | Purpose | Required |
+|-----|---------|----------|
+| `CLERK_SECRET_KEY` | Server-side secret key (`sk_…`) from your Clerk dashboard → API Keys. | yes |
+| `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` | Browser-safe publishable key (`pk_…`) from the same dashboard page. | yes |
+| `CLERK_WEBHOOK_SIGNING_SECRET` | svix signing secret from Clerk → Webhooks → Endpoint settings. Required only if you provision a webhook (see [Webhooks](#webhooks)). | optional |
 
-Without these the starter falls back to stub providers so the UI keeps rendering. **The order-read routes (`/api/throttle/orders*`) return 501 until Clerk is configured** — they refuse to identify the buyer from request input alone.
+Without these the starter falls back to stub providers so the UI keeps rendering. **The order-read and address routes return 501 until Clerk is configured** — they refuse to identify the buyer from request input alone.
+
+The Clerk catch-all routes mount at `/auth/login` and `/auth/register`. Those paths are exposed to Clerk via committed `.env` defaults (`NEXT_PUBLIC_CLERK_SIGN_IN_URL` etc) — change them if you mount the UI elsewhere.
 
 ### Allow the embed origin
 
@@ -81,53 +87,78 @@ curl -X PUT https://api.usethrottle.dev/api/v1/embed-config \
   -d '{"allowed_origins":["http://localhost:3000","https://your-prod-domain.com"]}'
 ```
 
-### Demo Accounts
+### Demo accounts (fallback only)
+
+When Clerk env vars aren't set, the auth pages fall back to a legacy mock auth driven by Zustand. The demo accounts below only work in that mode:
 
 | Email | Password | Role |
 |-------|----------|------|
 | `admin@example.com` | `password123` | Admin |
 | `demo@example.com` | `password123` | Customer |
 
+With Clerk configured, sign up via `<SignUp />` instead — these accounts are ignored.
+
 ## Project Structure
 
 ```
 src/
   app/
-    (store)/          # Storefront (header/footer layout)
-      [slug]/         # Product detail, category, brand pages
-      shop/           # Product catalog with filters
-      cart/           # Shopping cart
-      checkout/       # Checkout + success
-      account/         # Dashboard, orders, addresses, settings
-      auth/            # Login, register, forgot password
-      brands/          # All brands page
-    (admin)/admin/    # Admin dashboard
+    (store)/                  # Storefront layout
+      [slug]/                 # Product detail / category / brand
+      shop/                   # Catalog with filters
+      cart/, checkout/        # Cart + Throttle PaymentEmbed checkout
+      account/                # Orders, addresses, settings (auth-gated)
+      auth/                   # Clerk <SignIn /> / <SignUp /> catch-alls
+    (admin)/admin/            # Admin dashboard (role-gated)
+    api/
+      throttle/
+        cart/                 # Real-time cart sync routes
+        checkout-session/     # Mint Throttle PaymentEmbed session
+        customer-addresses/   # Buyer-scoped address CRUD
+        orders/               # Buyer-scoped order list + by-id
+        webhook/              # Throttle event receiver (HMAC-verified)
+      webhooks/clerk/         # Clerk event receiver (svix-verified)
+      auth/me/                # Buyer identity + default address (prefill)
   components/
-    ui/               # shadcn/ui + custom components
-    layout/           # Header, Footer, AnnouncementBar, BackToTop
-    products/         # ProductCard, Grid, Gallery, StarRating, etc.
-    cart/             # CartDrawer, CartItem, CartSummary
-    search/           # SearchModal
-    auth/             # AuthCardLayout
+    ui/                       # shadcn/ui + custom
+    layout/                   # Header, Footer, AnnouncementBar, BackToTop
+    products/, cart/, search/, auth/, checkout/
   data/
-    products.json     # Product, category, brand data
+    products.json             # Product catalog (Throttle is BYO-catalog)
   lib/
-    config.ts         # Store name, contact, social, shipping, currency
-    navigation.ts     # Desktop + mobile menu config
-    checkout/         # Pluggable checkout provider
-    repositories/     # Data access layer (JSON-backed, swappable)
-    validators/       # Zod schemas
-    analytics.ts      # Event tracking placeholder
-    structured-data.ts # JSON-LD helpers
-  store/              # Zustand stores (cart, wishlist, auth, orders)
-  types/              # TypeScript types + interfaces
-  i18n/               # next-intl config
-  hooks/              # Custom hooks (useAuthGuard)
+    config.ts                 # Store name, contact, etc
+    env.ts                    # Zod-validated env
+    navigation.ts             # Menu config
+    repositories/             # Catalog data access (JSON-backed)
+    validators/               # Zod schemas
+    auth/                     # AuthProvider port + Clerk impl + demo fallback
+      types.ts                #   AuthProvider, AuthUser interfaces
+      clerk-provider.ts       #   default impl
+      demo-provider.ts        #   stub when keys absent
+      index.ts                #   picks active provider
+    throttle/                 # Throttle SDK glue
+      cart.ts, sessions.ts, orders.ts
+      customers.ts, customer-addresses.ts
+      webhook.ts              #   HMAC verify for /api/throttle/webhook
+      checkout-provider.ts    #   implements local CheckoutProvider interface
+      clients.ts              #   lazy SDK client singletons
+      client.ts               #   ThrottleApiError + callThrottle wrapper
+      types.ts                #   shared response shapes
+    checkout/                 # Pluggable CheckoutProvider (Throttle default)
+    http/
+      validate.ts             # requireUuid — rejects non-UUID path params
+  store/                      # Zustand stores
+    cart.ts                   #   cart + Throttle sync queue
+    wishlist.ts, auth.ts      #   legacy auth (fallback)
+    orders.ts, recently-viewed.ts
+  types/                      # TypeScript types
+  i18n/                       # next-intl config
+  hooks/                      # useAuthGuard, useCurrentUser
+  middleware.ts               # Clerk + security headers
 messages/
-  en.json             # English translations (200+ keys)
-  es.json             # Spanish translations
+  en.json, es.json            # next-intl translations
 docs/
-  CUSTOMIZATION.md    # Full customization guide
+  CUSTOMIZATION.md            # Full customization guide
 ```
 
 ## Customization
@@ -146,39 +177,86 @@ See [CUSTOMIZATION.md](docs/CUSTOMIZATION.md) for the full guide.
 
 ## How the Throttle integration works
 
+### Cart sync (real-time)
+
 ```
-[Buyer]  → /checkout (shipping form)
-         → POST /api/throttle/checkout-session
-              ├─ POST /api/v1/carts                  (create Throttle cart)
-              ├─ POST /api/v1/carts/{id}/items × N   (sync line items)
-              ├─ POST /api/v1/carts/{id}/checkout    (cart → draft order)
+[Buyer]  → "Add to cart" on /shop or PDP
+         → useCartStore optimistic local update (instant UI)
+         → POST /api/throttle/cart                  (create Throttle cart, only once)
+         → POST /api/throttle/cart/{id}/items       (variantId + quantity ONLY;
+                                                     name and unitPrice come from
+                                                     the server-side catalog)
+         → maps Throttle line-item id ↔ local variantId
+         → "Change quantity" → PATCH /…/items/{itemId}
+         → "Remove"          → DELETE /…/items/{itemId}
+         → "Clear cart"      → abandon Throttle cart; fresh one on next add
+```
+
+All mutations run through a per-tab serial queue so a quick "add + update qty" can't race ahead of the original POST. The Throttle cart id and the local → Throttle line-item id mapping persist to localStorage so the cart survives reloads.
+
+### Checkout
+
+```
+[Buyer]  → /checkout (form prefilled from /api/auth/me when signed in)
+         → POST /api/throttle/checkout-session     ({ throttleCartId, items, customer })
+              ├─ Reuses the cart built up during browsing if still `open`,
+              │   otherwise rebuilds one from local items
+              ├─ POST /api/v1/carts/{id}/checkout  (cart → draft order)
               └─ POST /api/v1/checkout-sessions/embed-token
          ← { checkoutSessionId, embedUrl, orderId }
-         → Mounts <PaymentEmbed sessionId=... /> from
-           `@usethrottle/checkout-react`
-         → Throttle iframe captures payment via the connected provider
-         → `onSucceeded` → /checkout/success?order_id=...
-                            ↑ fetches order from /api/throttle/orders/[id]
-
-[Throttle] → POST /api/throttle/webhook
-              ├─ HMAC-SHA256 verify against THROTTLE_WEBHOOK_SECRET
-              └─ fan out to per-event handlers (order.*, payment.*)
+         → Mounts <PaymentEmbed /> from @usethrottle/checkout-react
+         → onSucceeded → /checkout/success?order_id=...
+                          ↑ /api/throttle/orders/[id] (ownership-checked)
 ```
 
-Key files:
+### Authentication + customer mirror
+
+```
+[Buyer]  → /auth/login → Clerk <SignIn />
+         → first authenticated server call
+              → authProvider.getCurrentUser()
+                   ├─ read Clerk privateMetadata.throttleCustomerId (cache)
+                   ├─ if missing: GET  /customers/by-external/{clerkUserId}
+                   └─ if none yet: POST /customers, save id to metadata
+
+[Clerk]  → POST /api/webhooks/clerk  (user.created / user.updated)
+              ├─ svix verify against CLERK_WEBHOOK_SIGNING_SECRET
+              └─ same upsert, catches users created via SSO / dashboard
+                  before they make a server visit
+
+Subsequent /api/throttle/orders* and /api/throttle/customer-addresses*
+read throttleCustomerId from the session — never from the request body.
+```
+
+### Throttle webhooks (post-payment)
+
+```
+[Throttle] → POST /api/throttle/webhook
+              ├─ HMAC-SHA256 verify against THROTTLE_WEBHOOK_SECRET
+              └─ fan out (order.created, payment.captured, payment.failed, …)
+```
+
+### Key files
 
 | File | Purpose |
 |------|---------|
-| `src/lib/throttle/client.ts` | Auth + JSON-envelope fetch wrapper for `https://api.usethrottle.dev`. |
-| `src/lib/throttle/cart.ts` | `createCart`, `addCartItems`, `checkoutCart`. |
-| `src/lib/throttle/sessions.ts` | `createEmbedSession` for the PaymentEmbed. |
-| `src/lib/throttle/orders.ts` | `getOrder`, `listOrders` with cursor pagination. |
+| `src/lib/throttle/clients.ts` | Lazy `CartClient` + `CheckoutClient` singletons. |
+| `src/lib/throttle/cart.ts` | `createCart`, `addCartItem(s)`, `updateCartItem`, `removeCartItem`, `checkoutCart`, `getCart` — via `@usethrottle/cart`. |
+| `src/lib/throttle/sessions.ts` | `createEmbedSession` via `@usethrottle/checkout-sdk`. |
+| `src/lib/throttle/orders.ts` | `getOrder` via `checkout-sdk`; `listOrders` via `api-client` (with defensive camel/snake mapping). |
+| `src/lib/throttle/customers.ts` | `createCustomer`, `getCustomer`, `getCustomerByExternalId`. |
+| `src/lib/throttle/customer-addresses.ts` | `listAddresses`, `createAddress`, `updateAddress`, `deleteAddress`. PATCH/DELETE fall back to direct fetch because the api-client URL builder is broken for two-segment paths. |
 | `src/lib/throttle/webhook.ts` | `verifyThrottleSignature` (`X-Throttle-Signature`). |
-| `src/lib/throttle/checkout-provider.ts` | Implements the starter's `CheckoutProvider` interface against Throttle. |
-| `src/app/api/throttle/checkout-session/route.ts` | Server route the checkout page calls. |
-| `src/app/api/throttle/webhook/route.ts` | Signature-verified webhook receiver. |
-| `src/app/api/throttle/orders/route.ts` | Lists orders by buyer email for the account dashboard. |
-| `src/app/api/throttle/orders/[id]/route.ts` | Fetches a single order by id (success page). |
+| `src/lib/throttle/checkout-provider.ts` | Implements the local `CheckoutProvider` interface against Throttle. |
+| `src/lib/auth/*` | `AuthProvider` port + Clerk impl + demo fallback. |
+| `src/lib/http/validate.ts` | `requireUuid` — boundary validation for dynamic route params. |
+| `src/app/api/throttle/cart/**` | Real-time cart sync (POST/PATCH/DELETE). |
+| `src/app/api/throttle/checkout-session/route.ts` | Mint PaymentEmbed session. |
+| `src/app/api/throttle/customer-addresses/**` | Buyer-scoped address CRUD. |
+| `src/app/api/throttle/orders/{,[id]}/route.ts` | Buyer-scoped order list + by-id (ownership-checked). |
+| `src/app/api/throttle/webhook/route.ts` | Throttle event receiver (HMAC-verified). |
+| `src/app/api/webhooks/clerk/route.ts` | Clerk event receiver (svix-verified). |
+| `src/app/api/auth/me/route.ts` | Returns identity + default address for checkout prefill. |
 | `src/components/checkout/throttle-payment-embed.tsx` | Wrapper around `@usethrottle/checkout-react`'s `PaymentEmbed`. |
 
 ### Authentication (Clerk by default)
@@ -230,7 +308,13 @@ export interface AuthUser {
 
 The admin section checks `user.role === "admin"`. Under Clerk, set the role on the user's `publicMetadata.role` from the Clerk dashboard. Under the demo provider, role lives on the Zustand user object (set via the demo accounts in `src/store/auth.ts`).
 
-### Subscribing to webhooks
+## Webhooks
+
+Two webhook surfaces ship with the starter — both signature-verified, both safe to enable in production.
+
+### Throttle → `/api/throttle/webhook`
+
+Receives post-payment events. Verified via HMAC-SHA256 against `THROTTLE_WEBHOOK_SECRET`.
 
 ```bash
 curl -X POST https://api.usethrottle.dev/api/v1/webhook-endpoints \
@@ -243,6 +327,27 @@ curl -X POST https://api.usethrottle.dev/api/v1/webhook-endpoints \
 ```
 
 Copy the returned `secret` into `THROTTLE_WEBHOOK_SECRET`.
+
+### Clerk → `/api/webhooks/clerk`
+
+Catches `user.created` / `user.updated` events that the lazy upsert misses (dashboard creates, social SSO signups). Verified via svix against `CLERK_WEBHOOK_SIGNING_SECRET`.
+
+1. clerk.com → Webhooks → **Add Endpoint**
+2. URL: `https://<your-public-host>/api/webhooks/clerk`
+3. Subscribe to `user.created`, `user.updated`
+4. Copy the **Signing Secret** into `CLERK_WEBHOOK_SIGNING_SECRET`
+
+For local dev, expose your dev server with a tunnel (ngrok, cloudflared, etc.) and use the tunnel's HTTPS URL as the endpoint. Without the webhook the lazy upsert still runs on the first authenticated server call — the webhook just makes the link faster and catches edge cases.
+
+## Security guarantees
+
+| Guarantee | How |
+|-----------|-----|
+| **No price tampering.** Server is the only source of truth for line-item prices. | `POST /api/throttle/cart/{id}/items` accepts only `{ variantId, quantity }`; `name`, `unitPrice`, `imageUrl`, `description` are read from `productRepository.findVariant(variantId)`. |
+| **No IDOR on order routes.** Buyers can't enumerate or read other buyers' orders. | `/api/throttle/orders*` reads the customer id from the Clerk session and rejects any request without one. The `[id]` route additionally compares `order.customerId` to the session before returning. |
+| **No SSRF via path traversal.** Dynamic route params can't redirect upstream fetches. | `requireUuid()` at every dynamic-route boundary rejects non-UUID segments with `400 invalid_id`. `customer-addresses.ts` also `encodeURIComponent`s its segments as defense in depth. |
+| **Webhooks verified.** Both Throttle and Clerk webhooks are HMAC/svix-verified before any handler runs. | `src/lib/throttle/webhook.ts` (HMAC-SHA256 + timestamp tolerance) and `verifyWebhook` from `@clerk/nextjs/webhooks`. |
+| **CSP locked down.** Inline frames + external script origins explicitly allow-listed. | `src/middleware.ts` composes `clerkMiddleware()` with strict CSP allowing only `clerk.com`, `clerk.accounts.dev`, `checkout.usethrottle.dev`. |
 
 ### Swapping the engine
 
