@@ -5,6 +5,8 @@ import { clerkMiddleware, createRouteMatcher } from "@clerk/nextjs/server"
 const isProtectedRoute = createRouteMatcher([
   "/account(.*)",
   "/api/throttle/orders(.*)",
+  "/api/throttle/customer-addresses(.*)",
+  "/api/auth/me",
 ])
 
 const clerkConfigured = Boolean(

@@ -26,6 +26,9 @@ const envSchema = z.object({
   // Clerk — clerk.com (default auth provider)
   CLERK_SECRET_KEY: z.string().startsWith("sk_").optional(),
   NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: z.string().startsWith("pk_").optional(),
+  // Webhook signing secret from clerk.com → Webhooks → Endpoint settings.
+  // svix uses this to validate user.created / user.updated payloads.
+  CLERK_WEBHOOK_SIGNING_SECRET: z.string().optional(),
 })
 
 export type Env = z.infer<typeof envSchema>

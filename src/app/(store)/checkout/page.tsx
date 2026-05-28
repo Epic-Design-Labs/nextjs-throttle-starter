@@ -56,6 +56,65 @@ export default function CheckoutPage() {
 
   useEffect(() => setMounted(true), [])
 
+  // Prefill from session when the buyer is signed in. The /api/auth/me
+  // endpoint returns email + name from Clerk and the buyer's default
+  // saved shipping address from Throttle. No-ops when unauthenticated.
+  useEffect(() => {
+    let cancelled = false
+    fetch("/api/auth/me")
+      .then(async (res) => {
+        if (!res.ok) return null
+        return (await res.json()) as {
+          user: { email: string; firstName: string | null; lastName: string | null } | null
+          defaultAddress: {
+            firstName?: string
+            lastName?: string
+            line1: string
+            line2?: string
+            city: string
+            state: string
+            postalCode: string
+            country: string
+          } | null
+        }
+      })
+      .then((payload) => {
+        if (cancelled || !payload?.user) return
+        setForm((current) => ({
+          ...current,
+          email: current.email || payload.user!.email,
+          firstName: current.firstName || payload.user!.firstName || "",
+          lastName: current.lastName || payload.user!.lastName || "",
+          ...(payload.defaultAddress
+            ? {
+                firstName:
+                  current.firstName ||
+                  payload.defaultAddress.firstName ||
+                  payload.user!.firstName ||
+                  "",
+                lastName:
+                  current.lastName ||
+                  payload.defaultAddress.lastName ||
+                  payload.user!.lastName ||
+                  "",
+                line1: current.line1 || payload.defaultAddress.line1,
+                line2: current.line2 || payload.defaultAddress.line2 || "",
+                city: current.city || payload.defaultAddress.city,
+                state: current.state || payload.defaultAddress.state,
+                postalCode: current.postalCode || payload.defaultAddress.postalCode,
+                country: current.country || payload.defaultAddress.country,
+              }
+            : {}),
+        }))
+      })
+      .catch(() => {
+        // Prefill is best-effort — silent on failure.
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
   if (!mounted) {
     return (
       <div className="mx-auto max-w-5xl px-4 py-16 sm:px-6 lg:px-8">
