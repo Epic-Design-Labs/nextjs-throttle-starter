@@ -14,7 +14,6 @@ export interface AuthGuardResult {
     email?: string
     firstName?: string
     lastName?: string
-    role?: string
   } | null
   isAuthenticated: boolean
   isLoading: boolean
@@ -37,10 +36,6 @@ function useClerkAuthGuard(): AuthGuardResult {
           email: user.primaryEmailAddress?.emailAddress,
           firstName: user.firstName ?? undefined,
           lastName: user.lastName ?? undefined,
-          // Admin role is stamped on the Clerk user's publicMetadata.
-          // (Set it from the Clerk dashboard → Users → metadata editor,
-          // or via webhook on user creation.)
-          role: (user.publicMetadata as { role?: string } | undefined)?.role,
         }
       : null,
     isAuthenticated: Boolean(isSignedIn),
@@ -69,7 +64,6 @@ function useLegacyAuthGuard(): AuthGuardResult {
           email: user.email,
           firstName: user.firstName,
           lastName: user.lastName,
-          role: user.role,
         }
       : null,
     isAuthenticated,
