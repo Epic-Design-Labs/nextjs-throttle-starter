@@ -10,6 +10,7 @@ import { PageHeader } from "@/components/ui/page-header"
 import { OrderStatusBadge } from "@/components/ui/order-status-badge"
 import {
   ChevronRight,
+  CreditCard,
   Heart,
   LogOut,
   MapPin,
@@ -75,6 +76,7 @@ function subBadgeVariant(s: DashboardSubscription["status"]) {
 const quickLinks = [
   { name: "All orders", href: "/account/orders", icon: Package },
   { name: "Addresses", href: "/account/addresses", icon: MapPin },
+  { name: "Payment methods", href: "/account/payment-methods", icon: CreditCard },
   { name: "Wishlist", href: "/wishlist", icon: Heart },
   { name: "Settings", href: "/account/settings", icon: Settings },
 ]
