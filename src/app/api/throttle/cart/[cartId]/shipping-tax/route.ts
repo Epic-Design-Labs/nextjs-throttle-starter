@@ -24,13 +24,11 @@ const CalcSchema = z.object({
   selectedMethodId: z.string().optional(),
 })
 
+// Only methodId is accepted from the wire. label/amount/currency are
+// resolved server-side from the canonical quote — never trust the
+// client for prices.
 const SelectSchema = z.object({
-  method: z.object({
-    id: z.string().min(1),
-    label: z.string().min(1),
-    amount: z.number().int().nonnegative(),
-    currency: z.string().min(3).max(3),
-  }),
+  methodId: z.string().min(1),
 })
 
 function notConfigured() {
@@ -119,7 +117,7 @@ export async function PATCH(
       {
         error: {
           code: "validation_error",
-          message: "Expected { method: { id, label, amount, currency } }.",
+          message: "Expected { methodId: string }.",
         },
       },
       { status: 400 }
@@ -127,7 +125,7 @@ export async function PATCH(
   }
 
   try {
-    const quote = await selectShippingMethod(cartId, parsed.data.method)
+    const quote = await selectShippingMethod(cartId, parsed.data.methodId)
     return NextResponse.json({ quote })
   } catch (error) {
     if (error instanceof ThrottleApiError) {

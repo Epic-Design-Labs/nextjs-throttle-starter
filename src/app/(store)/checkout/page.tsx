@@ -206,12 +206,15 @@ export default function CheckoutPage() {
     if (!throttleCartId) return
     setMethodLocking(true)
     try {
+      // Server resolves label/amount/currency from the canonical quote
+      // — we only send which method id the buyer picked. Sending the
+      // rate here would let a malicious client zero it out.
       const res = await fetch(
         `/api/throttle/cart/${throttleCartId}/shipping-tax`,
         {
           method: "PATCH",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify({ method }),
+          body: JSON.stringify({ methodId: method.id }),
         }
       )
       if (!res.ok) {

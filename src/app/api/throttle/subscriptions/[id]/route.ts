@@ -44,8 +44,10 @@ async function requireCustomerSubscription(id: string) {
     )
   }
   // Ownership check — fetch the subscription and compare its customerId
-  // to the session's. Without this any buyer could pause/cancel anyone's
-  // subscription by guessing UUIDs.
+  // to the session's. Deny-by-default: a null/empty customerId on the
+  // record is treated as "not yours" rather than "no link, so allow",
+  // which closes the fail-open path if Throttle ever returns orphan
+  // subscriptions.
   let sub
   try {
     sub = await getSubscription(id)
@@ -58,8 +60,7 @@ async function requireCustomerSubscription(id: string) {
     }
     throw err
   }
-  const subCustomerId = (sub as unknown as { customerId?: string }).customerId
-  if (subCustomerId && subCustomerId !== user.throttleCustomerId) {
+  if (!sub.customerId || sub.customerId !== user.throttleCustomerId) {
     return NextResponse.json(
       { error: { code: "forbidden", message: "Subscription does not belong to this account." } },
       { status: 403 }

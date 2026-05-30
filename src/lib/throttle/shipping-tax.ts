@@ -1,7 +1,7 @@
 import "server-only"
 
 import type { ShippingTaxAddress } from "@usethrottle/cart"
-import { callThrottle } from "./client"
+import { ThrottleApiError, callThrottle } from "./client"
 import { getCartClient } from "./clients"
 
 export interface ShippingMethodOption {
@@ -88,20 +88,36 @@ export async function calculateShippingTax(
 }
 
 /**
- * Lock a previously-quoted method onto the cart. Returns the updated
- * quote so the UI can refresh totals.
+ * Lock a previously-quoted method onto the cart by id. Server re-queries
+ * the canonical methods for the cart and resolves the label/rate/currency
+ * itself — the only thing the caller may supply is which method id to
+ * pick. Sending `rateAmount` from the client would let a buyer POST
+ * `{ methodId: "real", amount: 0 }` and check out with free shipping.
+ *
+ * Throws `unknown_method` when the requested id isn't in the current
+ * quote (e.g. the buyer's address changed and the previously-shown
+ * methods no longer apply).
  */
 export async function selectShippingMethod(
   cartId: string,
-  method: ShippingMethodOption
+  methodId: string
 ): Promise<ShippingTaxQuote> {
+  const quoted = await calculateShippingTax(cartId)
+  const chosen = quoted.methods.find((m) => m.id === methodId)
+  if (!chosen) {
+    throw new ThrottleApiError(
+      400,
+      "unknown_method",
+      "Selected shipping method is not available for this cart."
+    )
+  }
   await callThrottle(() =>
     getCartClient().shipping.select(cartId, {
-      methodId: method.id,
-      displayName: method.label,
-      rateAmount: method.amount,
-      currency: method.currency,
+      methodId: chosen.id,
+      displayName: chosen.label,
+      rateAmount: chosen.amount,
+      currency: chosen.currency,
     })
   )
-  return calculateShippingTax(cartId, { selectedMethodId: method.id })
+  return calculateShippingTax(cartId, { selectedMethodId: chosen.id })
 }

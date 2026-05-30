@@ -24,6 +24,8 @@ export type SubscriptionInterval = "weekly" | "monthly" | "quarterly" | "yearly"
 
 export interface ThrottleSubscription {
   id: string
+  /** Owning customer. Null only when the underlying record is system-orphaned. */
+  customerId: string | null
   status: SubscriptionStatus
   planReference: string
   planName: string | null
@@ -38,6 +40,8 @@ export interface ThrottleSubscription {
 
 interface RawSubscription {
   id?: string
+  customerId?: string | null
+  customer_id?: string | null
   status?: SubscriptionStatus
   planReference?: string
   plan_reference?: string
@@ -60,6 +64,7 @@ interface RawSubscription {
 function normalise(raw: RawSubscription): ThrottleSubscription {
   return {
     id: (raw.id as string) ?? "",
+    customerId: (raw.customerId ?? raw.customer_id ?? null) as string | null,
     status: (raw.status as SubscriptionStatus) ?? "cancelled",
     planReference: (raw.planReference ?? raw.plan_reference ?? "") as string,
     planName: (raw.planName ?? raw.plan_name) as string | null,
