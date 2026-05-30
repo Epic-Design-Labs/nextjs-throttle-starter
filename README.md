@@ -14,7 +14,7 @@ Built by [Epic Design Labs](https://epicdesignlabs.com)
 - **Checkout** — Throttle [`PaymentEmbed`](https://docs.usethrottle.dev/developers/embedded-checkout) iframe, **shipping form prefilled from the signed-in buyer's saved address**, server-side pricing (no client tampering)
 - **Authentication** — [Clerk](https://clerk.com) by default with a pluggable `AuthProvider` port; legacy mock auth as a fallback when Clerk env is absent
 - **Customer mirror** — Clerk users automatically upserted as Throttle customers (lazy on first server call, plus a `user.created` webhook for SSO / dashboard creations)
-- **Account** — Dashboard with recent order summary + default shipping address + active subscriptions, order history scoped to the buyer's Throttle `customerId`, addresses **stored on the Throttle customer record**, Clerk-managed profile (email/password/2FA), reorder (whole or per-line-item)
+- **Account** — Dashboard with recent order summary + default shipping address + active subscriptions, order history scoped to the buyer's Throttle `customerId`, addresses + payment methods **stored on the Throttle customer record**, Clerk-managed profile (email/password/2FA), reorder (whole or per-line-item)
 - **Brands** — Brand pages with product filtering
 - **Subcategories** — Nested categories with accordion mobile menu
 - **Search** — Cmd+K modal with instant results and popular searches
@@ -116,6 +116,7 @@ src/
         cart/                 # Real-time cart sync routes
         checkout-session/     # Mint Throttle PaymentEmbed session
         customer-addresses/   # Buyer-scoped address CRUD
+        customer-payment-methods/ # List + set default + remove vaulted cards
         orders/               # Buyer-scoped order list + by-id
         webhook/              # Throttle event receiver (HMAC-verified)
       webhooks/clerk/         # Clerk event receiver (svix-verified)
@@ -139,7 +140,7 @@ src/
       index.ts                #   picks active provider
     throttle/                 # Throttle SDK glue
       cart.ts, sessions.ts, orders.ts
-      customers.ts, customer-addresses.ts
+      customers.ts, customer-addresses.ts, payment-methods.ts
       webhook.ts              #   HMAC verify for /api/throttle/webhook
       checkout-provider.ts    #   implements local CheckoutProvider interface
       clients.ts              #   lazy SDK client singletons
@@ -247,6 +248,7 @@ read throttleCustomerId from the session — never from the request body.
 | `src/lib/throttle/orders.ts` | `getOrder` via `checkout-sdk`; `listOrders` via `api-client` (with defensive camel/snake mapping). |
 | `src/lib/throttle/customers.ts` | `createCustomer`, `getCustomer`, `getCustomerByExternalId`. |
 | `src/lib/throttle/customer-addresses.ts` | `listAddresses`, `createAddress`, `updateAddress`, `deleteAddress`. PATCH/DELETE fall back to direct fetch because the api-client URL builder is broken for two-segment paths. |
+| `src/lib/throttle/payment-methods.ts` | `listPaymentMethods`, `setDefaultPaymentMethod`, `removePaymentMethod`. Same direct-fetch fallback for PATCH/DELETE. |
 | `src/lib/throttle/webhook.ts` | `verifyThrottleSignature` (`X-Throttle-Signature`). |
 | `src/lib/throttle/checkout-provider.ts` | Implements the local `CheckoutProvider` interface against Throttle. |
 | `src/lib/auth/*` | `AuthProvider` port + Clerk impl + demo fallback. |
@@ -254,6 +256,7 @@ read throttleCustomerId from the session — never from the request body.
 | `src/app/api/throttle/cart/**` | Real-time cart sync (POST/PATCH/DELETE). |
 | `src/app/api/throttle/checkout-session/route.ts` | Mint PaymentEmbed session. |
 | `src/app/api/throttle/customer-addresses/**` | Buyer-scoped address CRUD. |
+| `src/app/api/throttle/customer-payment-methods/**` | Buyer-scoped payment method list / set-default / remove. |
 | `src/app/api/throttle/orders/{,[id]}/route.ts` | Buyer-scoped order list + by-id (ownership-checked). |
 | `src/app/api/throttle/webhook/route.ts` | Throttle event receiver (HMAC-verified). |
 | `src/app/api/webhooks/clerk/route.ts` | Clerk event receiver (svix-verified). |
@@ -374,6 +377,7 @@ interface CheckoutProvider {
 | `/account/orders` | Order history (+ subscriptions sidebar with pause/resume/cancel) |
 | `/account/orders/[id]` | Order detail with per-line-item reorder |
 | `/account/addresses` | Saved shipping addresses, synced to the Throttle customer |
+| `/account/payment-methods` | Saved cards (vaulted at checkout) — set default, remove |
 | `/account/settings` | Clerk's `<UserProfile />` — profile, password, 2FA, sessions |
 | `/auth/login` | Sign in |
 | `/about` | About the starter + Epic Design Labs |
