@@ -5,7 +5,8 @@ import Link from "next/link"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
-import { Package, Repeat, RotateCcw } from "lucide-react"
+import { Package, Pause, Play, Repeat, RotateCcw, X } from "lucide-react"
+import { toast } from "sonner"
 import { PageHeader } from "@/components/ui/page-header"
 import { EmptyState } from "@/components/ui/empty-state"
 import { OrderStatusBadge } from "@/components/ui/order-status-badge"
@@ -50,8 +51,52 @@ export default function OrdersPage() {
   const { isReady } = useAuthGuard()
   const [orders, setOrders] = useState<ThrottleOrder[] | null>(null)
   const [subscriptions, setSubscriptions] = useState<ClientSubscription[]>([])
+  const [busySubId, setBusySubId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const { reorder, busyOrderId } = useReorder()
+
+  async function runSubAction(
+    id: string,
+    action: "pause" | "resume" | "cancel"
+  ) {
+    setBusySubId(id)
+    const previous = subscriptions
+    try {
+      const res = await fetch(`/api/throttle/subscriptions/${id}`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(
+          action === "cancel"
+            ? { action, atPeriodEnd: true }
+            : { action }
+        ),
+      })
+      if (!res.ok) {
+        const payload = (await res.json().catch(() => null)) as
+          | { error?: { message?: string } }
+          | null
+        throw new Error(payload?.error?.message ?? "Action failed.")
+      }
+      const { subscription } = (await res.json()) as {
+        subscription: ClientSubscription
+      }
+      setSubscriptions((prev) =>
+        prev.map((s) => (s.id === id ? subscription : s))
+      )
+      toast.success(
+        action === "pause"
+          ? "Subscription paused"
+          : action === "resume"
+            ? "Subscription resumed"
+            : "Subscription will cancel at period end"
+      )
+    } catch (err) {
+      setSubscriptions(previous)
+      toast.error(err instanceof Error ? err.message : "Action failed.")
+    } finally {
+      setBusySubId(null)
+    }
+  }
 
   useEffect(() => {
     if (!isReady) return
@@ -126,30 +171,75 @@ export default function OrdersPage() {
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">
-            {subscriptions.map((sub) => (
-              <div
-                key={sub.id}
-                className="flex flex-col gap-2 rounded-md border border-border/60 p-3 sm:flex-row sm:items-center sm:justify-between"
-              >
-                <div className="min-w-0 flex-1">
-                  <p className="text-sm font-medium">
-                    {sub.planName ?? sub.planReference}
-                  </p>
-                  <p className="text-xs text-muted-foreground">
-                    {formatPrice(sub.amount, sub.currency)} / {sub.interval}
-                    {sub.currentPeriodEnd && (
-                      <> · next billing {formatDate(sub.currentPeriodEnd)}</>
+            {subscriptions.map((sub) => {
+              const busy = busySubId === sub.id
+              const canPause = sub.status === "active" || sub.status === "trialing"
+              const canResume = sub.status === "paused"
+              const canCancel =
+                sub.status !== "cancelled" && !sub.cancelAtPeriodEnd
+              return (
+                <div
+                  key={sub.id}
+                  className="flex flex-col gap-3 rounded-md border border-border/60 p-3 sm:flex-row sm:items-center sm:justify-between"
+                >
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-medium">
+                      {sub.planName ?? sub.planReference}
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      {formatPrice(sub.amount, sub.currency)} / {sub.interval}
+                      {sub.currentPeriodEnd && (
+                        <> · next billing {formatDate(sub.currentPeriodEnd)}</>
+                      )}
+                      {sub.cancelAtPeriodEnd && (
+                        <> · cancels at period end</>
+                      )}
+                    </p>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Badge
+                      variant={subBadgeVariant(sub.status)}
+                      className="capitalize"
+                    >
+                      {sub.status.replace("_", " ")}
+                    </Badge>
+                    {canPause && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => void runSubAction(sub.id, "pause")}
+                        disabled={busy}
+                      >
+                        <Pause className="mr-1.5 h-3.5 w-3.5" />
+                        Pause
+                      </Button>
                     )}
-                    {sub.cancelAtPeriodEnd && (
-                      <> · cancels at period end</>
+                    {canResume && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => void runSubAction(sub.id, "resume")}
+                        disabled={busy}
+                      >
+                        <Play className="mr-1.5 h-3.5 w-3.5" />
+                        Resume
+                      </Button>
                     )}
-                  </p>
+                    {canCancel && (
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => void runSubAction(sub.id, "cancel")}
+                        disabled={busy}
+                      >
+                        <X className="mr-1.5 h-3.5 w-3.5" />
+                        Cancel
+                      </Button>
+                    )}
+                  </div>
                 </div>
-                <Badge variant={subBadgeVariant(sub.status)} className="capitalize">
-                  {sub.status.replace("_", " ")}
-                </Badge>
-              </div>
-            ))}
+              )
+            })}
           </CardContent>
         </Card>
       )}

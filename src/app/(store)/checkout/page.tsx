@@ -10,6 +10,7 @@ import { Separator } from "@/components/ui/separator"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { useCartStore } from "@/store/cart"
 import { CartSummary } from "@/components/cart/cart-summary"
+import { DiscountInput } from "@/components/cart/discount-input"
 import { ThrottlePaymentEmbed } from "@/components/checkout/throttle-payment-embed"
 import { formatPrice } from "@/lib/utils"
 import { toast } from "sonner"
@@ -43,16 +44,38 @@ const EMPTY_FORM: ShippingForm = {
   country: "US",
 }
 
+interface ShippingMethodOption {
+  id: string
+  label: string
+  amount: number
+  currency: string
+  deliveryWindowLabel?: string
+}
+
+interface ShippingTaxQuote {
+  methods: ShippingMethodOption[]
+  selectedMethodId: string | null
+  shippingTotal: number
+  taxTotal: number
+  prompts: Array<{ field: string; message: string }>
+  errors: Array<{ code: string; message: string }>
+  unavailable: boolean
+}
+
 export default function CheckoutPage() {
   const router = useRouter()
   const items = useCartStore((s) => s.items)
   const throttleCartId = useCartStore((s) => s.throttleCartId)
   const getSubtotal = useCartStore((s) => s.getSubtotal)
   const clearCart = useCartStore((s) => s.clearCart)
+  const setShipping = useCartStore((s) => s.setShipping)
   const [mounted, setMounted] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [form, setForm] = useState<ShippingForm>(EMPTY_FORM)
   const [session, setSession] = useState<CheckoutSession | null>(null)
+  const [quote, setQuote] = useState<ShippingTaxQuote | null>(null)
+  const [calcing, setCalcing] = useState(false)
+  const [methodLocking, setMethodLocking] = useState(false)
 
   useEffect(() => setMounted(true), [])
 
@@ -114,6 +137,108 @@ export default function CheckoutPage() {
       cancelled = true
     }
   }, [])
+
+  // Recompute shipping + tax whenever the destination changes enough
+  // to matter. Throttle answers with the available methods and tax
+  // total for *this* cart against *this* address; locking a chosen
+  // method is a separate call (handleSelectMethod). Debounced so the
+  // buyer can type without firing a request per keystroke.
+  useEffect(() => {
+    if (!throttleCartId) return
+    const hasMin =
+      form.line1.trim().length > 0 &&
+      form.city.trim().length > 0 &&
+      form.postalCode.trim().length > 0 &&
+      form.country.trim().length >= 2
+    if (!hasMin) return
+
+    const handle = setTimeout(() => {
+      setCalcing(true)
+      fetch(`/api/throttle/cart/${throttleCartId}/shipping-tax`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          shippingAddress: {
+            firstName: form.firstName || undefined,
+            lastName: form.lastName || undefined,
+            addressLine1: form.line1,
+            addressLine2: form.line2 || undefined,
+            city: form.city,
+            stateProvince: form.state || undefined,
+            postalCode: form.postalCode,
+            countryCode: form.country.toUpperCase(),
+          },
+        }),
+      })
+        .then(async (res) => {
+          if (!res.ok) {
+            // Don't surface backend wobble as a toast — checkout UX
+            // should keep showing the previous quote and let the buyer
+            // proceed. Log for debug.
+            const payload = await res.json().catch(() => null)
+            console.warn("[checkout] shipping-tax calc failed:", payload)
+            return null
+          }
+          return (await res.json()) as { quote: ShippingTaxQuote }
+        })
+        .then((payload) => {
+          if (!payload) return
+          setQuote(payload.quote)
+          setShipping(null, payload.quote.taxTotal)
+        })
+        .finally(() => setCalcing(false))
+    }, 500)
+    return () => clearTimeout(handle)
+  }, [
+    throttleCartId,
+    form.line1,
+    form.line2,
+    form.city,
+    form.state,
+    form.postalCode,
+    form.country,
+    form.firstName,
+    form.lastName,
+    setShipping,
+  ])
+
+  async function handleSelectMethod(method: ShippingMethodOption) {
+    if (!throttleCartId) return
+    setMethodLocking(true)
+    try {
+      const res = await fetch(
+        `/api/throttle/cart/${throttleCartId}/shipping-tax`,
+        {
+          method: "PATCH",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ method }),
+        }
+      )
+      if (!res.ok) {
+        const payload = (await res.json().catch(() => null)) as
+          | { error?: { message?: string } }
+          | null
+        throw new Error(
+          payload?.error?.message ?? "Could not select shipping method."
+        )
+      }
+      const { quote: next } = (await res.json()) as { quote: ShippingTaxQuote }
+      setQuote(next)
+      setShipping(
+        {
+          methodId: method.id,
+          displayName: method.label,
+          rateAmount: method.amount,
+          currency: method.currency,
+        },
+        next.taxTotal
+      )
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Selection failed.")
+    } finally {
+      setMethodLocking(false)
+    }
+  }
 
   if (!mounted) {
     return (
@@ -314,6 +439,70 @@ export default function CheckoutPage() {
 
           <Card>
             <CardHeader>
+              <CardTitle className="text-lg">Shipping method</CardTitle>
+            </CardHeader>
+            <CardContent>
+              {!quote && !calcing && (
+                <p className="text-sm text-muted-foreground">
+                  Fill in your address above to see shipping options.
+                </p>
+              )}
+              {calcing && !quote && (
+                <p className="text-sm text-muted-foreground">
+                  Calculating shipping + tax…
+                </p>
+              )}
+              {quote && quote.unavailable && (
+                <p className="text-sm text-muted-foreground">
+                  No shipping rates available for this address. The store
+                  may not ship here, or shipping is configured to be
+                  calculated at fulfillment time.
+                </p>
+              )}
+              {quote && quote.methods.length > 0 && (
+                <fieldset className="space-y-2" disabled={methodLocking}>
+                  {quote.methods.map((m) => {
+                    const selected = quote.selectedMethodId === m.id
+                    return (
+                      <label
+                        key={m.id}
+                        className={`flex cursor-pointer items-center justify-between rounded-md border p-3 text-sm transition ${
+                          selected
+                            ? "border-foreground bg-accent"
+                            : "border-border hover:bg-accent/50"
+                        }`}
+                      >
+                        <span className="flex items-center gap-3">
+                          <input
+                            type="radio"
+                            name="shippingMethod"
+                            value={m.id}
+                            checked={selected}
+                            onChange={() => void handleSelectMethod(m)}
+                            className="accent-foreground"
+                          />
+                          <span>
+                            <span className="font-medium">{m.label}</span>
+                            {m.deliveryWindowLabel && (
+                              <span className="ml-2 text-xs text-muted-foreground">
+                                {m.deliveryWindowLabel}
+                              </span>
+                            )}
+                          </span>
+                        </span>
+                        <span className="tabular-nums">
+                          {m.amount === 0 ? "Free" : formatPrice(m.amount, m.currency)}
+                        </span>
+                      </label>
+                    )
+                  })}
+                </fieldset>
+              )}
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
               <CardTitle className="text-lg">Payment</CardTitle>
             </CardHeader>
             <CardContent>
@@ -340,6 +529,7 @@ export default function CheckoutPage() {
                 </div>
               ))}
               <Separator />
+              <DiscountInput />
               <CartSummary subtotal={subtotal} />
               <Button type="submit" size="lg" className="w-full" disabled={submitting}>
                 {submitting ? "Creating session..." : "Continue to Payment"}

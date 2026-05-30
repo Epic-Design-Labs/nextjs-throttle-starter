@@ -92,9 +92,13 @@ export interface CreateCartInput {
 }
 
 export async function createCart(input: CreateCartInput = {}): Promise<ThrottleCart> {
+  // Throttle's cart create API recently renamed `storeId` → `applicationId`
+  // and now rejects `storeId` as an unknown field. The SDK's typed union
+  // still accepts either, so we send `applicationId`. THROTTLE_STORE_ID
+  // env name kept for continuity — it just *holds* the application uuid.
   const sdk = await callThrottle(() =>
     getCartClient().carts.create({
-      storeId: requireStoreId(),
+      applicationId: requireStoreId(),
       currency: "USD",
       metadata: {
         ...(input.externalId ? { externalId: input.externalId } : {}),
@@ -179,5 +183,46 @@ export async function checkoutCart(cartId: string): Promise<ThrottleOrder> {
 
 export async function getCart(cartId: string): Promise<ThrottleCart> {
   const sdk = await callThrottle(() => getCartClient().carts.get(cartId))
+  return sdkCartToThrottleCart(sdk)
+}
+
+export interface AppliedDiscount {
+  code: string
+  amount: number
+  currency: string
+  type: "percentage" | "fixed_amount"
+  freeShipping: boolean
+}
+
+function appliedDiscountFromCart(cart: SdkCart): AppliedDiscount | null {
+  const d = cart.appliedDiscount
+  if (!d) return null
+  return {
+    code: d.code,
+    amount: d.amount,
+    currency: d.currency,
+    type: d.type,
+    freeShipping: d.freeShipping,
+  }
+}
+
+export async function applyDiscount(
+  cartId: string,
+  code: string
+): Promise<{
+  cart: ThrottleCart
+  discount: AppliedDiscount | null
+}> {
+  const sdk = await callThrottle(() =>
+    getCartClient().discounts.apply(cartId, code)
+  )
+  return {
+    cart: sdkCartToThrottleCart(sdk),
+    discount: appliedDiscountFromCart(sdk),
+  }
+}
+
+export async function removeDiscount(cartId: string): Promise<ThrottleCart> {
+  const sdk = await callThrottle(() => getCartClient().discounts.remove(cartId))
   return sdkCartToThrottleCart(sdk)
 }

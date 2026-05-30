@@ -108,3 +108,67 @@ export async function listSubscriptions(
     throw toThrottleApiError(err)
   }
 }
+
+export async function getSubscription(
+  id: string
+): Promise<ThrottleSubscription> {
+  configureApiClient()
+  try {
+    const result = (await SubscriptionsService.getApiV1Subscriptions1(id)) as {
+      data?: RawSubscription
+    }
+    return normalise(result.data ?? {})
+  } catch (err) {
+    throw toThrottleApiError(err)
+  }
+}
+
+export async function pauseSubscription(
+  id: string
+): Promise<ThrottleSubscription> {
+  configureApiClient()
+  try {
+    const result = (await SubscriptionsService.postApiV1SubscriptionsPause(
+      id
+    )) as { data?: RawSubscription }
+    return normalise(result.data ?? {})
+  } catch (err) {
+    throw toThrottleApiError(err)
+  }
+}
+
+export async function resumeSubscription(
+  id: string
+): Promise<ThrottleSubscription> {
+  configureApiClient()
+  try {
+    const result = (await SubscriptionsService.postApiV1SubscriptionsResume(
+      id
+    )) as { data?: RawSubscription }
+    return normalise(result.data ?? {})
+  } catch (err) {
+    throw toThrottleApiError(err)
+  }
+}
+
+export async function cancelSubscription(
+  id: string,
+  options: { atPeriodEnd?: boolean; reason?: string } = {}
+): Promise<ThrottleSubscription> {
+  configureApiClient()
+  try {
+    // api-client's typed schema only exposes a subset; cast through to
+    // send cancel_at_period_end + reason if provided.
+    const body = {
+      cancel_at_period_end: options.atPeriodEnd,
+      reason: options.reason,
+    } as Parameters<typeof SubscriptionsService.postApiV1SubscriptionsCancel>[1]
+    const result = (await SubscriptionsService.postApiV1SubscriptionsCancel(
+      id,
+      body
+    )) as { data?: RawSubscription }
+    return normalise(result.data ?? {})
+  } catch (err) {
+    throw toThrottleApiError(err)
+  }
+}

@@ -7,6 +7,8 @@ const isProtectedRoute = createRouteMatcher([
   "/api/throttle/orders(.*)",
   "/api/throttle/customer-addresses(.*)",
   "/api/throttle/subscriptions(.*)",
+  // /api/throttle/subscriptions/[id] action routes are also auth-gated
+  // by the matcher above (subscriptions(.*) catches subpaths).
   "/api/auth/me",
 ])
 

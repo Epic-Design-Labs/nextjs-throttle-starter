@@ -4,6 +4,21 @@ import { create } from "zustand"
 import { persist } from "zustand/middleware"
 import type { CartItem, ProductImage } from "@/types"
 
+export interface AppliedDiscountState {
+  code: string
+  amount: number
+  currency: string
+  type: "percentage" | "fixed_amount"
+  freeShipping: boolean
+}
+
+export interface SelectedShippingState {
+  methodId: string
+  displayName: string
+  rateAmount: number
+  currency: string
+}
+
 interface CartState {
   /** Local-only id used to seed Throttle's externalId on cart creation. */
   externalId: string
@@ -12,6 +27,10 @@ interface CartState {
   items: CartItem[]
   /** Local variantId → Throttle line-item id. Populated when adds settle. */
   throttleItemIds: Record<string, string>
+  appliedDiscount: AppliedDiscountState | null
+  selectedShipping: SelectedShippingState | null
+  /** Throttle-computed tax total (cents). Set after shipping/tax calc. */
+  taxTotal: number
   isOpen: boolean
   /** Surface-level sync state, useful for "saving…" UI. */
   syncing: boolean
@@ -34,8 +53,13 @@ interface CartState {
   openCart: () => void
   closeCart: () => void
 
+  applyDiscountCode: (code: string) => Promise<void>
+  removeDiscountCode: () => Promise<void>
+  setShipping: (shipping: SelectedShippingState | null, taxTotal?: number) => void
+
   getSubtotal: () => number
   getItemCount: () => number
+  getDiscountTotal: () => number
 }
 
 // Per-tab sync queue — guarantees a quantity PATCH can't race ahead of the
@@ -182,6 +206,9 @@ export const useCartStore = create<CartState>()(
       throttleCartId: null,
       items: [],
       throttleItemIds: {},
+      appliedDiscount: null,
+      selectedShipping: null,
+      taxTotal: 0,
       isOpen: false,
       syncing: false,
       syncError: null,
@@ -250,10 +277,60 @@ export const useCartStore = create<CartState>()(
           items: [],
           throttleCartId: null,
           throttleItemIds: {},
+          appliedDiscount: null,
+          selectedShipping: null,
+          taxTotal: 0,
           externalId: makeExternalId(),
           syncError: null,
         })
       },
+
+      applyDiscountCode: async (code) => {
+        const cartId = await ensureCartId(get, set)
+        const res = await fetch(`/api/throttle/cart/${cartId}/discount`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ code }),
+        })
+        if (!res.ok) {
+          const payload = (await res.json().catch(() => null)) as
+            | { error?: { message?: string } }
+            | null
+          throw new Error(
+            payload?.error?.message ?? "Could not apply discount."
+          )
+        }
+        const { discount } = (await res.json()) as {
+          discount: AppliedDiscountState | null
+        }
+        set({ appliedDiscount: discount })
+      },
+
+      removeDiscountCode: async () => {
+        const cartId = get().throttleCartId
+        if (!cartId) {
+          set({ appliedDiscount: null })
+          return
+        }
+        const res = await fetch(`/api/throttle/cart/${cartId}/discount`, {
+          method: "DELETE",
+        })
+        if (!res.ok) {
+          const payload = (await res.json().catch(() => null)) as
+            | { error?: { message?: string } }
+            | null
+          throw new Error(
+            payload?.error?.message ?? "Could not remove discount."
+          )
+        }
+        set({ appliedDiscount: null })
+      },
+
+      setShipping: (shipping, taxTotal) =>
+        set({
+          selectedShipping: shipping,
+          ...(taxTotal !== undefined ? { taxTotal } : {}),
+        }),
 
       toggleCart: () => set((state) => ({ isOpen: !state.isOpen })),
       openCart: () => set({ isOpen: true }),
@@ -263,6 +340,15 @@ export const useCartStore = create<CartState>()(
         get().items.reduce((sum, item) => sum + item.lineTotal, 0),
       getItemCount: () =>
         get().items.reduce((sum, item) => sum + item.quantity, 0),
+      getDiscountTotal: () => {
+        const d = get().appliedDiscount
+        if (!d) return 0
+        if (d.type === "fixed_amount") return d.amount
+        // percentage — `amount` is the percent in basis-points-style
+        // (e.g. 1000 = 10%). Apply against subtotal.
+        const subtotal = get().items.reduce((s, i) => s + i.lineTotal, 0)
+        return Math.round((subtotal * d.amount) / 10000)
+      },
     }),
     {
       name: "cart-storage",
@@ -271,6 +357,9 @@ export const useCartStore = create<CartState>()(
         throttleCartId: state.throttleCartId,
         items: state.items,
         throttleItemIds: state.throttleItemIds,
+        appliedDiscount: state.appliedDiscount,
+        selectedShipping: state.selectedShipping,
+        taxTotal: state.taxTotal,
       }),
     }
   )

@@ -9,6 +9,7 @@ import { EmptyState } from "@/components/ui/empty-state"
 import { useCartStore } from "@/store/cart"
 import { CartItem } from "@/components/cart/cart-item"
 import { CartSummary } from "@/components/cart/cart-summary"
+import { DiscountInput } from "@/components/cart/discount-input"
 import { useEffect, useState } from "react"
 
 export default function CartPage() {
@@ -52,7 +53,10 @@ export default function CartPage() {
           ))}
         </div>
         <Separator className="my-6" />
-        <CartSummary subtotal={subtotal} />
+        <div className="mb-4">
+          <DiscountInput />
+        </div>
+        <CartSummary subtotal={subtotal} withTotals={false} />
         <div className="mt-8 flex flex-col gap-3">
           <Button size="lg" asChild>
             <Link href="/checkout">Proceed to Checkout</Link>
