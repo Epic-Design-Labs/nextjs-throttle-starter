@@ -14,7 +14,7 @@ Built by [Epic Design Labs](https://epicdesignlabs.com)
 - **Checkout** — Throttle [`PaymentEmbed`](https://docs.usethrottle.dev/developers/embedded-checkout) iframe, **shipping form prefilled from the signed-in buyer's saved address**, server-side pricing (no client tampering)
 - **Authentication** — [Clerk](https://clerk.com) by default with a pluggable `AuthProvider` port; legacy mock auth as a fallback when Clerk env is absent
 - **Customer mirror** — Clerk users automatically upserted as Throttle customers (lazy on first server call, plus a `user.created` webhook for SSO / dashboard creations)
-- **Account** — Order history scoped to the signed-in buyer's Throttle `customerId`, saved addresses **stored on the Throttle customer record**, profile settings
+- **Account** — Dashboard with recent order summary + default shipping address + active subscriptions, order history scoped to the buyer's Throttle `customerId`, addresses **stored on the Throttle customer record**, Clerk-managed profile (email/password/2FA), reorder (whole or per-line-item)
 - **Brands** — Brand pages with product filtering
 - **Subcategories** — Nested categories with accordion mobile menu
 - **Search** — Cmd+K modal with instant results and popular searches
@@ -89,14 +89,15 @@ curl -X PUT https://api.usethrottle.dev/api/v1/embed-config \
 
 ### Demo accounts (fallback only)
 
-When Clerk env vars aren't set, the auth pages fall back to a legacy mock auth driven by Zustand. The demo accounts below only work in that mode:
+When Clerk env vars aren't set, the auth pages fall back to a legacy mock auth driven by Zustand. The demo account below only works in that mode:
 
-| Email | Password | Role |
-|-------|----------|------|
-| `admin@example.com` | `password123` | Admin |
-| `demo@example.com` | `password123` | Customer |
+| Email | Password |
+|-------|----------|
+| `demo@example.com` | `password123` |
 
-With Clerk configured, sign up via `<SignUp />` instead — these accounts are ignored.
+With Clerk configured, sign up via `<SignUp />` instead — this account is ignored.
+
+> The starter is built for **headless storefronts**. Merchant operations (orders, fulfillment, customers, discounts, subscriptions) live in Throttle's dashboard — there is no `/admin` section in this codebase. Clients who want an in-app admin build their own on top.
 
 ## Project Structure
 
@@ -109,8 +110,8 @@ src/
       cart/, checkout/        # Cart + Throttle PaymentEmbed checkout
       account/                # Orders, addresses, settings (auth-gated)
       auth/                   # Clerk <SignIn /> / <SignUp /> catch-alls
-    (admin)/admin/            # Admin dashboard (role-gated)
     api/
+      account/summary/        # Aggregated dashboard payload
       throttle/
         cart/                 # Real-time cart sync routes
         checkout-session/     # Mint Throttle PaymentEmbed session
@@ -304,10 +305,6 @@ export interface AuthUser {
 }
 ```
 
-**Admin gate**
-
-The admin section checks `user.role === "admin"`. Under Clerk, set the role on the user's `publicMetadata.role` from the Clerk dashboard. Under the demo provider, role lives on the Zustand user object (set via the demo accounts in `src/store/auth.ts`).
-
 ## Webhooks
 
 Two webhook surfaces ship with the starter — both signature-verified, both safe to enable in production.
@@ -373,7 +370,11 @@ interface CheckoutProvider {
 | `/search` | Search (also available via Cmd+K modal) |
 | `/wishlist` | Saved products |
 | `/brands` | All brands |
-| `/account` | Account dashboard |
+| `/account` | Dashboard — recent order, default address, active subscriptions, quick nav |
+| `/account/orders` | Order history (+ subscriptions sidebar with pause/resume/cancel) |
+| `/account/orders/[id]` | Order detail with per-line-item reorder |
+| `/account/addresses` | Saved shipping addresses, synced to the Throttle customer |
+| `/account/settings` | Clerk's `<UserProfile />` — profile, password, 2FA, sessions |
 | `/auth/login` | Sign in |
 | `/about` | About the starter + Epic Design Labs |
 | `/contact` | Contact form |
