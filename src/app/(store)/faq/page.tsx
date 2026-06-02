@@ -1,4 +1,5 @@
 import type { Metadata } from "next"
+import Link from "next/link"
 import {
   Accordion,
   AccordionContent,
@@ -84,12 +85,12 @@ export default function FAQPage() {
           Can&apos;t find what you&apos;re looking for? Our support team is
           happy to help.
         </p>
-        <a
+        <Link
           href="/contact"
           className="mt-4 inline-block text-sm font-medium underline hover:text-foreground"
         >
           Contact Support
-        </a>
+        </Link>
       </div>
     </div>
   )

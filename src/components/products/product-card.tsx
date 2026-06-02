@@ -17,6 +17,14 @@ interface ProductCardProps {
 }
 
 export function ProductCard({ product }: ProductCardProps) {
+  // Hooks must run before any early return (rules of hooks).
+  const wishlistItems = useWishlistStore((s) => s.items)
+  const addItem = useWishlistStore((s) => s.addItem)
+  const removeItem = useWishlistStore((s) => s.removeItem)
+
+  const [mounted, setMounted] = useState(false)
+  useEffect(() => setMounted(true), [])
+
   const defaultVariant = product.variants[0]
   if (!defaultVariant) return null
 
@@ -24,13 +32,6 @@ export function ProductCard({ product }: ProductCardProps) {
   const compareAtPrice = defaultVariant.compareAtPrice
   const isOnSale = compareAtPrice && compareAtPrice > price
   const image = product.images[0]
-
-  const wishlistItems = useWishlistStore((s) => s.items)
-  const addItem = useWishlistStore((s) => s.addItem)
-  const removeItem = useWishlistStore((s) => s.removeItem)
-
-  const [mounted, setMounted] = useState(false)
-  useEffect(() => setMounted(true), [])
   const isWishlisted = mounted && wishlistItems.some((i) => i.productId === product.id)
 
   function handleWishlist(e: React.MouseEvent) {

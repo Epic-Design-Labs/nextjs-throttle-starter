@@ -16,7 +16,7 @@ export default function ReturnsPolicyPage() {
           30-Day Return Policy
         </h2>
         <p>
-          We want you to be completely satisfied with your purchase. If you're
+          We want you to be completely satisfied with your purchase. If you&apos;re
           not happy with your order, you can return it within 30 days of
           delivery for a full refund.
         </p>
