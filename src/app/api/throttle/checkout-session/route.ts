@@ -1,7 +1,9 @@
-import { NextResponse, type NextRequest } from "next/server"
+import { NextResponse, after, type NextRequest } from "next/server"
 import { z } from "zod"
 import { checkoutProvider } from "@/lib/checkout"
 import { ThrottleApiError } from "@/lib/throttle"
+import { authProvider, isClerkConfigured } from "@/lib/auth"
+import { saveAddressIfNew } from "@/lib/throttle/customer-addresses"
 import type { Cart, CartItem } from "@/types"
 
 const ItemSchema = z.object({
@@ -95,6 +97,35 @@ export async function POST(req: NextRequest) {
       },
       throttleCartId: parsed.data.throttleCartId,
     })
+
+    // Remember the buyer's shipping address on their Throttle customer
+    // so it prefills next time. Runs after the response is sent (no
+    // checkout latency), best-effort, and only for signed-in buyers —
+    // the customer id comes from the session, never the request body,
+    // so a guest can't write to someone else's customer.
+    if (isClerkConfigured) {
+      const shippingAddress = parsed.data.customer.shippingAddress
+      after(async () => {
+        try {
+          const user = await authProvider.getCurrentUser()
+          if (!user?.throttleCustomerId) return
+          await saveAddressIfNew(user.throttleCustomerId, {
+            firstName: shippingAddress.firstName,
+            lastName: shippingAddress.lastName,
+            line1: shippingAddress.line1,
+            line2: shippingAddress.line2,
+            city: shippingAddress.city,
+            state: shippingAddress.state,
+            postalCode: shippingAddress.postalCode,
+            country: shippingAddress.country,
+            phone: shippingAddress.phone,
+          })
+        } catch (err) {
+          console.warn("[throttle] checkout address auto-save skipped:", err)
+        }
+      })
+    }
+
     return NextResponse.json(session, { status: 201 })
   } catch (error) {
     if (error instanceof ThrottleApiError) {

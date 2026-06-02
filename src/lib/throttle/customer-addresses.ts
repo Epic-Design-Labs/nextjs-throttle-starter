@@ -159,3 +159,33 @@ export async function deleteAddress(
     throw toThrottleApiError(err)
   }
 }
+
+const normalize = (s?: string) => (s ?? "").trim().toLowerCase()
+
+/**
+ * Save an address to the customer only if it isn't already on file.
+ * Dedupes on line1 + postalCode + city + country (case-insensitive).
+ * Used by checkout to remember a buyer's shipping address without
+ * creating a duplicate on every order. Returns the new address, or
+ * null when an equivalent one already exists. Becomes the default only
+ * when the customer has no addresses yet (never overrides an existing
+ * default).
+ */
+export async function saveAddressIfNew(
+  customerId: string,
+  input: AddressInput
+): Promise<CustomerAddress | null> {
+  const existing = await listAddresses(customerId)
+  const duplicate = existing.some(
+    (a) =>
+      normalize(a.line1) === normalize(input.line1) &&
+      normalize(a.postalCode) === normalize(input.postalCode) &&
+      normalize(a.city) === normalize(input.city) &&
+      normalize(a.country) === normalize(input.country)
+  )
+  if (duplicate) return null
+  return createAddress(customerId, {
+    ...input,
+    isDefault: existing.length === 0,
+  })
+}
