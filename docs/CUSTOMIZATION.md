@@ -1,14 +1,22 @@
 # Customization Guide
 
-This guide covers how to customize the ecommerce starter for your store.
+How to customize this starter for your store. The storefront, theming,
+catalog, and i18n are all driven by a few config files. The commerce
+engine ([Throttle](https://usethrottle.dev)) and auth ([Clerk](https://clerk.com))
+are pre-wired but swappable.
+
+For the architecture of the Throttle + Clerk integration (cart sync,
+checkout, webhooks, customer mirror, security), see the **How the
+Throttle integration works** and **Authentication** sections of the
+[README](../README.md).
 
 ## Quick Start Checklist
 
-1. Update `src/lib/config.ts` with your store name, contact info, and social links
-2. Replace placeholder images in `public/images/products/`
-3. Update product data in `src/data/products.json`
+1. Copy `.env.local.example` → `.env.local` and fill in your Throttle + Clerk keys (see [Environment Variables](#environment-variables))
+2. Update `src/lib/config.ts` with your store name, contact info, and social links
+3. Update product data in `src/data/products.json` (images fall back to `public/images/products/placeholder.png`)
 4. Edit theme colors in `src/app/globals.css`
-5. Connect your payment provider (see below)
+5. Configure navigation in `src/lib/navigation.ts`
 
 ## Store Configuration
 
@@ -20,14 +28,16 @@ export const siteConfig = {
   tagline: "Your tagline here.",
   contact: { email: "you@yourstore.com", ... },
   social: { instagram: "https://instagram.com/yourstore", ... },
-  freeShippingThreshold: 5000, // $50.00 in cents
-  taxRate: 0.07,
+  freeShippingThreshold: 7500, // $75.00 in cents
+  taxRate: 0.08,
   currency: "USD",
   locale: "en-US",
 }
 ```
 
-This config is referenced by the header, footer, metadata, cart summary, trust signals, and more. Change it once, it updates everywhere.
+Referenced by the header, footer, metadata, cart summary, trust signals, and more. Change it once, it updates everywhere.
+
+> Note: `freeShippingThreshold` / `taxRate` here are display estimates used before checkout. At checkout, **real** shipping rates and tax come from Throttle's `shippingTax.calculateCart` (when a shipping/tax provider is connected to your Throttle store).
 
 ## Theme & Colors
 
@@ -86,13 +96,28 @@ Product data lives in `src/data/products.json`. To add a product:
 1. Add the product object to the `products` array
 2. Reference existing `categoryIds` or create new categories
 3. Assign a `brandId` from the `brands` array
-4. Set image URLs (or use `/images/products/placeholder.svg`)
+4. Set image URLs. Missing/broken images fall back to `public/images/products/placeholder.png` automatically (see `ProductImage` in `src/components/ui/product-image.tsx`)
 
-To swap to a CMS or database, implement the `ProductRepository` and `CategoryRepository` interfaces from `src/types/index.ts` and update `src/lib/repositories/index.ts`.
+> Image URLs that get sent to Throttle (cart line items, orders) must be **absolute** `http(s)` URLs — Throttle rejects relative paths. The cart sync route drops relative image URLs before sending; supply absolute CDN URLs in `products.json` if you want product images to appear on Throttle-side line items.
 
-## Connecting a Payment Provider
+Note: this starter is **bring-your-own-catalog** — Throttle is the commerce engine (cart, checkout, orders, customers, subscriptions), but your product catalog lives in `products.json` (or whatever you swap in). To move the catalog to a CMS or database, implement the `ProductRepository` / `CategoryRepository` interfaces from `src/types/index.ts` and update `src/lib/repositories/index.ts`.
 
-The checkout uses a pluggable `CheckoutProvider` interface:
+## Commerce Engine (Throttle)
+
+Throttle is pre-wired as the commerce engine — cart sync, checkout sessions, the `PaymentEmbed`, orders, customers, addresses, payment methods, discounts, shipping/tax, and subscriptions. The wiring lives in `src/lib/throttle/*` and `src/app/api/throttle/*`.
+
+**To use it**, set `THROTTLE_API_KEY` + `THROTTLE_STORE_ID` (see [Environment Variables](#environment-variables)) and allow your origin for the embed:
+
+```bash
+curl -X PUT https://api.usethrottle.dev/api/v1/embed-config \
+  -H "x-api-key: $THROTTLE_API_KEY" \
+  -H "content-type: application/json" \
+  -d '{"allowed_origins":["http://localhost:3000","https://your-domain.com"]}'
+```
+
+Without `THROTTLE_API_KEY` + `THROTTLE_STORE_ID`, the starter falls back to a stub checkout provider so the UI keeps rendering — but no real cart/order/payment is created.
+
+**To swap engines** (e.g. Stripe), the checkout layer is behind a pluggable interface:
 
 ```typescript
 interface CheckoutProvider {
@@ -102,16 +127,21 @@ interface CheckoutProvider {
 }
 ```
 
-### Steps:
+1. Create `src/lib/checkout/your-provider.ts` implementing `CheckoutProvider`
+2. Re-point the export in `src/lib/checkout/index.ts`
+3. Add a webhook route under `src/app/api/`
 
-1. Create `src/lib/checkout/your-provider.ts` (e.g. `stripe-provider.ts`)
-2. Implement the `CheckoutProvider` interface
-3. Export it from `src/lib/checkout/index.ts`:
-   ```typescript
-   export { yourProvider as checkoutProvider } from "./your-provider"
-   ```
-4. Add API routes for webhooks in `src/app/api/`
-5. Add your API keys to `.env.local` and uncomment validation in `src/lib/env.ts`
+## Authentication (Clerk)
+
+Clerk is the default auth provider, behind a pluggable `AuthProvider` seam (`src/lib/auth/*`). On a buyer's first authenticated request, the Clerk user is mirrored to a Throttle customer (the Clerk user id is stored as the customer's `externalId`), so orders, addresses, and subscriptions scope to that customer.
+
+**To use it**, set `CLERK_SECRET_KEY` + `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY`. Without them, the starter falls back to a localStorage-backed mock auth so the UI still renders, and the order-read routes return `501` (they refuse to identify a buyer from request input alone).
+
+**To swap providers** (NextAuth, Lucia, magic-link, etc.):
+
+1. Implement the one-method `AuthProvider` interface in `src/lib/auth/types.ts`
+2. Re-point the export in `src/lib/auth/index.ts`
+3. Replace the auth route pages in `src/app/(store)/auth/*` with your provider's UI
 
 ## Internationalization (i18n)
 
@@ -120,32 +150,17 @@ The starter uses `next-intl` with translation files in `messages/`:
 - `messages/en.json` — English (default)
 - `messages/es.json` — Spanish (example)
 
-### Using translations in components:
-
 ```tsx
 // Client components
 import { useTranslations } from "next-intl"
-
-function MyComponent() {
-  const t = useTranslations("cart")
-  return <h1>{t("title")}</h1>
-}
+const t = useTranslations("cart")
 
 // Server components
 import { getTranslations } from "next-intl/server"
-
-async function MyPage() {
-  const t = await getTranslations("shop")
-  return <h1>{t("allProducts")}</h1>
-}
+const t = await getTranslations("shop")
 ```
 
-### Adding a new language:
-
-1. Copy `messages/en.json` to `messages/fr.json`
-2. Translate the values
-3. Add `"fr"` to `locales` in `src/i18n/config.ts`
-4. To enable locale routing (`/en/`, `/fr/`), add `next-intl` middleware
+To add a language: copy `messages/en.json` to `messages/<locale>.json`, translate, and add the locale to `src/i18n/config.ts`. For locale routing (`/en/`, `/fr/`), add `next-intl` middleware.
 
 ## Analytics
 
@@ -160,12 +175,30 @@ export function trackEvent(name, properties) {
 }
 ```
 
-Pre-defined ecommerce events: `addToCart`, `purchase`, `search`, `viewProduct`, `signUp`, `login`.
+Pre-defined ecommerce events include `addToCart`, `purchase`, `search`, `viewProduct`, `signUp`, `login`.
 
 ## Security Headers
 
-Security headers are configured in `src/middleware.ts`. The Content Security Policy (CSP) uses `report-only` in development and enforces in production. Update the CSP directives when adding external scripts (analytics, payment SDKs, etc.).
+Security headers + CSP are configured in `src/middleware.ts`, composed with Clerk's middleware. The CSP runs in `report-only` mode in development and enforces in production, and already allow-lists Clerk and the Throttle checkout origin. Add directives when you introduce external scripts (analytics, other SDKs).
 
 ## Environment Variables
 
-Required and optional env vars are validated in `src/lib/env.ts` using Zod. Uncomment validation rules as you integrate real services. See `.env.example` for the full list.
+All env vars are validated in `src/lib/env.ts` with Zod. Copy `.env.local.example` to `.env.local` and fill in:
+
+**Throttle (commerce)**
+
+| Var | Required | Purpose |
+|-----|----------|---------|
+| `THROTTLE_API_KEY` | yes | Server-side secret key (`sk_…`). |
+| `THROTTLE_STORE_ID` | yes | UUID of the Throttle store/application carts + orders attach to. |
+| `THROTTLE_WEBHOOK_SECRET` | for webhooks | Verifies signatures on `/api/throttle/webhook`. |
+
+**Clerk (auth)**
+
+| Var | Required | Purpose |
+|-----|----------|---------|
+| `CLERK_SECRET_KEY` | yes | Server-side secret key (`sk_…`). |
+| `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` | yes | Browser publishable key (`pk_…`). |
+| `CLERK_WEBHOOK_SIGNING_SECRET` | for webhooks | Verifies `/api/webhooks/clerk` (customer mirror). |
+
+Path/origin defaults (`NEXT_PUBLIC_CLERK_SIGN_IN_URL`, `NEXT_PUBLIC_THROTTLE_CHECKOUT_URL`, etc.) ship in the committed `.env` and rarely need changing — override in `.env.local` only if you mount things differently.
