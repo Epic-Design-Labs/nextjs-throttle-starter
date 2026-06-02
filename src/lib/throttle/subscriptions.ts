@@ -41,46 +41,32 @@ export interface ThrottleSubscription {
 interface RawSubscription {
   id?: string
   customerId?: string | null
-  customer_id?: string | null
   status?: SubscriptionStatus
   planReference?: string
-  plan_reference?: string
   planName?: string | null
-  plan_name?: string | null
   interval?: SubscriptionInterval
   amount?: number
   currency?: string
   currentPeriodStart?: string | null
-  current_period_start?: string | null
   currentPeriodEnd?: string | null
-  current_period_end?: string | null
   cancelAtPeriodEnd?: boolean
-  cancel_at_period_end?: boolean
   createdAt?: string
-  created_at?: string
-  [key: string]: unknown
 }
 
 function normalise(raw: RawSubscription): ThrottleSubscription {
   return {
-    id: (raw.id as string) ?? "",
-    customerId: (raw.customerId ?? raw.customer_id ?? null) as string | null,
-    status: (raw.status as SubscriptionStatus) ?? "cancelled",
-    planReference: (raw.planReference ?? raw.plan_reference ?? "") as string,
-    planName: (raw.planName ?? raw.plan_name) as string | null,
-    interval: (raw.interval as SubscriptionInterval) ?? "monthly",
-    amount: (raw.amount as number) ?? 0,
-    currency: (raw.currency as string) ?? "USD",
-    currentPeriodStart: (raw.currentPeriodStart ?? raw.current_period_start) as
-      | string
-      | null,
-    currentPeriodEnd: (raw.currentPeriodEnd ?? raw.current_period_end) as
-      | string
-      | null,
-    cancelAtPeriodEnd: Boolean(
-      raw.cancelAtPeriodEnd ?? raw.cancel_at_period_end
-    ),
-    createdAt: (raw.createdAt ?? raw.created_at ?? new Date().toISOString()) as string,
+    id: raw.id ?? "",
+    customerId: raw.customerId ?? null,
+    status: raw.status ?? "cancelled",
+    planReference: raw.planReference ?? "",
+    planName: raw.planName ?? null,
+    interval: raw.interval ?? "monthly",
+    amount: raw.amount ?? 0,
+    currency: raw.currency ?? "USD",
+    currentPeriodStart: raw.currentPeriodStart ?? null,
+    currentPeriodEnd: raw.currentPeriodEnd ?? null,
+    cancelAtPeriodEnd: Boolean(raw.cancelAtPeriodEnd),
+    createdAt: raw.createdAt ?? new Date().toISOString(),
   }
 }
 

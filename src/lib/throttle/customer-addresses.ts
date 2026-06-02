@@ -16,7 +16,9 @@ function configureApiClient() {
 /**
  * Shape consumed by the starter UI. Mirrors the local `Address` type
  * in src/types so existing components keep working when their data
- * source flips to Throttle.
+ * source flips to Throttle. Note the field-name translation: Throttle
+ * uses `addressLine1` / `stateProvince` / `countryCode`; the starter's
+ * Address shape uses `line1` / `state` / `country`.
  */
 export interface CustomerAddress {
   id: string
@@ -38,53 +40,31 @@ interface RawAddress {
   label?: string | null
   firstName?: string | null
   lastName?: string | null
-  first_name?: string | null
-  last_name?: string | null
   addressLine1?: string | null
   addressLine2?: string | null
-  address_line_1?: string | null
-  address_line_2?: string | null
   city?: string
   stateProvince?: string | null
-  state_province?: string | null
   postalCode?: string | null
-  postal_code?: string | null
   countryCode?: string | null
-  country_code?: string | null
   phone?: string | null
   isDefault?: boolean
-  is_default?: boolean
-  [key: string]: unknown
-}
-
-// api-client schema declares snake_case but the live API returns
-// camelCase. Same defensive `pick` pattern used in lib/throttle/orders.ts.
-function pickStr(o: RawAddress, snake: string, camel: string): string | undefined {
-  const value =
-    (o[camel] as string | null | undefined) ??
-    (o[snake] as string | null | undefined)
-  return value ?? undefined
 }
 
 function normaliseAddress(raw: RawAddress): CustomerAddress {
   return {
-    id: (raw.id as string) ?? "",
-    label: pickStr(raw, "label", "label"),
-    firstName: pickStr(raw, "first_name", "firstName"),
-    lastName: pickStr(raw, "last_name", "lastName"),
-    line1: pickStr(raw, "address_line_1", "addressLine1") ?? "",
-    line2: pickStr(raw, "address_line_2", "addressLine2"),
+    id: raw.id ?? "",
+    label: raw.label ?? undefined,
+    firstName: raw.firstName ?? undefined,
+    lastName: raw.lastName ?? undefined,
+    line1: raw.addressLine1 ?? "",
+    line2: raw.addressLine2 ?? undefined,
     city: raw.city ?? "",
-    state: pickStr(raw, "state_province", "stateProvince") ?? "",
-    postalCode: pickStr(raw, "postal_code", "postalCode") ?? "",
-    country: pickStr(raw, "country_code", "countryCode") ?? "",
-    phone: pickStr(raw, "phone", "phone"),
-    isDefault: Boolean(raw.isDefault ?? raw.is_default),
+    state: raw.stateProvince ?? "",
+    postalCode: raw.postalCode ?? "",
+    country: raw.countryCode ?? "",
+    phone: raw.phone ?? undefined,
+    isDefault: Boolean(raw.isDefault),
   }
-}
-
-interface RawListResponse {
-  data?: Array<RawAddress> | { addresses?: RawAddress[] }
 }
 
 export async function listAddresses(
@@ -92,19 +72,8 @@ export async function listAddresses(
 ): Promise<CustomerAddress[]> {
   configureApiClient()
   try {
-    const result = (await CustomersService.getApiV1CustomersAddresses(
-      customerId
-    )) as RawListResponse
-    // The response shape is sometimes { data: [...] } and sometimes
-    // { data: { addresses: [...] } } depending on api-client version —
-    // handle both.
-    let rows: RawAddress[] = []
-    if (Array.isArray(result.data)) {
-      rows = result.data
-    } else if (result.data?.addresses) {
-      rows = result.data.addresses
-    }
-    return rows.map(normaliseAddress)
+    const result = await CustomersService.getApiV1CustomersAddresses(customerId)
+    return (result.data ?? []).map((a) => normaliseAddress(a as RawAddress))
   } catch (err) {
     throw toThrottleApiError(err)
   }
@@ -129,64 +98,24 @@ export async function createAddress(
   input: AddressInput
 ): Promise<CustomerAddress> {
   configureApiClient()
-  const body = {
-    label: input.label,
-    first_name: input.firstName,
-    last_name: input.lastName,
-    address_line_1: input.line1,
-    address_line_2: input.line2,
-    city: input.city,
-    state_province: input.state,
-    postal_code: input.postalCode,
-    country_code: input.country,
-    phone: input.phone,
-    is_default: input.isDefault,
-  } as Parameters<typeof CustomersService.postApiV1CustomersAddresses>[1]
   try {
-    const result = await CustomersService.postApiV1CustomersAddresses(
-      customerId,
-      body
-    )
-    return normaliseAddress((result as { data?: RawAddress }).data ?? {})
+    const result = await CustomersService.postApiV1CustomersAddresses(customerId, {
+      label: input.label,
+      firstName: input.firstName,
+      lastName: input.lastName,
+      addressLine1: input.line1,
+      addressLine2: input.line2,
+      city: input.city,
+      stateProvince: input.state,
+      postalCode: input.postalCode,
+      countryCode: input.country ?? "US",
+      phone: input.phone,
+      isDefault: input.isDefault,
+    })
+    return normaliseAddress((result.data ?? {}) as RawAddress)
   } catch (err) {
     throw toThrottleApiError(err)
   }
-}
-
-// PATCH and DELETE for customer addresses fall back to direct fetch
-// because api-client's generated code is broken for these two: the URL
-// template is `/customers/{customerId}/addresses/{id}` but only `{id}`
-// is filled at runtime — `{customerId}` is left as a literal in the
-// path. Filed in the SDK feedback list. Until that lands these
-// helpers send raw requests so the address page actually works.
-
-async function directRequest<T>(
-  method: "PATCH" | "DELETE",
-  path: string,
-  body?: unknown
-): Promise<T | undefined> {
-  if (!env.THROTTLE_API_KEY) {
-    throw new Error("THROTTLE_API_KEY is not set.")
-  }
-  const res = await fetch(`${env.THROTTLE_API_BASE_URL}${path}`, {
-    method,
-    headers: {
-      "x-api-key": env.THROTTLE_API_KEY,
-      "content-type": "application/json",
-      accept: "application/json",
-    },
-    body: body === undefined ? undefined : JSON.stringify(body),
-  })
-  if (res.status === 204) return undefined
-  const text = await res.text()
-  const payload = text ? JSON.parse(text) : null
-  if (!res.ok) {
-    const err = (payload as { error?: { code?: string; message?: string } })?.error
-    throw toThrottleApiError(
-      new Error(err?.message ?? `Throttle ${method} ${path} failed (${res.status})`)
-    )
-  }
-  return (payload as { data?: T })?.data ?? (payload as T)
 }
 
 export async function updateAddress(
@@ -194,37 +123,39 @@ export async function updateAddress(
   addressId: string,
   input: Partial<AddressInput>
 ): Promise<CustomerAddress> {
-  const body = {
-    label: input.label,
-    first_name: input.firstName,
-    last_name: input.lastName,
-    address_line_1: input.line1,
-    address_line_2: input.line2,
-    city: input.city,
-    state_province: input.state,
-    postal_code: input.postalCode,
-    country_code: input.country,
-    phone: input.phone,
-    is_default: input.isDefault,
+  configureApiClient()
+  try {
+    const result = await CustomersService.patchApiV1CustomersAddresses(
+      customerId,
+      addressId,
+      {
+        label: input.label,
+        firstName: input.firstName,
+        lastName: input.lastName,
+        addressLine1: input.line1,
+        addressLine2: input.line2,
+        city: input.city,
+        stateProvince: input.state,
+        postalCode: input.postalCode,
+        countryCode: input.country,
+        phone: input.phone,
+        isDefault: input.isDefault,
+      }
+    )
+    return normaliseAddress((result.data ?? {}) as RawAddress)
+  } catch (err) {
+    throw toThrottleApiError(err)
   }
-  // encodeURIComponent both segments even though the route handler
-  // already validates them as UUIDs — defense in depth. If validation
-  // ever regresses, this still prevents path traversal into other
-  // Throttle endpoints (`../subscriptions/cancel-all` etc).
-  const raw = await directRequest<RawAddress>(
-    "PATCH",
-    `/api/v1/customers/${encodeURIComponent(customerId)}/addresses/${encodeURIComponent(addressId)}`,
-    body
-  )
-  return normaliseAddress(raw ?? {})
 }
 
 export async function deleteAddress(
   customerId: string,
   addressId: string
 ): Promise<void> {
-  await directRequest<void>(
-    "DELETE",
-    `/api/v1/customers/${encodeURIComponent(customerId)}/addresses/${encodeURIComponent(addressId)}`
-  )
+  configureApiClient()
+  try {
+    await CustomersService.deleteApiV1CustomersAddresses(customerId, addressId)
+  } catch (err) {
+    throw toThrottleApiError(err)
+  }
 }

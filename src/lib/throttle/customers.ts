@@ -28,22 +28,15 @@ interface RawCustomer {
   firstName?: string | null
   lastName?: string | null
   externalId?: string | null
-  external_id?: string | null
-  first_name?: string | null
-  last_name?: string | null
-  [key: string]: unknown
 }
 
-// The api-client TypeScript types declare snake_case but the live API
-// answers camelCase, so the SDK shape lies. Read both keys defensively
-// (same trick used in lib/throttle/orders.ts).
 function normaliseCustomer(raw: RawCustomer): ThrottleCustomer {
   return {
-    id: (raw.id as string) ?? "",
-    email: (raw.email as string) ?? "",
-    firstName: raw.firstName ?? raw.first_name ?? null,
-    lastName: raw.lastName ?? raw.last_name ?? null,
-    externalId: raw.externalId ?? raw.external_id ?? null,
+    id: raw.id ?? "",
+    email: raw.email ?? "",
+    firstName: raw.firstName ?? null,
+    lastName: raw.lastName ?? null,
+    externalId: raw.externalId ?? null,
   }
 }
 
@@ -52,9 +45,9 @@ export interface CreateCustomerInput {
   firstName?: string
   lastName?: string
   /**
-   * The auth provider's user id (e.g. Clerk's `user_xxx`). Stored on
-   * the Throttle customer so we can look the customer back up by
-   * auth identity later.
+   * The auth provider's user id (e.g. Clerk's `user_xxx`). Persisted on
+   * the Throttle customer so we can look the customer back up via
+   * {@link getCustomerByExternalId}.
    */
   externalId?: string
 }
@@ -63,19 +56,15 @@ export async function createCustomer(
   input: CreateCustomerInput
 ): Promise<ThrottleCustomer> {
   configureApiClient()
-  // api-client's typed schema omits `external_id`, but the live API
-  // accepts it. Cast through to send it anyway. Tracked in SDK
-  // feedback alongside the other api-client snake/camel issues.
-  const body = {
-    store_id: requireStoreId(),
-    email: input.email,
-    first_name: input.firstName,
-    last_name: input.lastName,
-    external_id: input.externalId,
-  } as Parameters<typeof CustomersService.postApiV1Customers>[0]
   try {
-    const result = await CustomersService.postApiV1Customers(body)
-    return normaliseCustomer(result.data as RawCustomer)
+    const result = await CustomersService.postApiV1Customers({
+      applicationId: requireStoreId(),
+      email: input.email,
+      firstName: input.firstName,
+      lastName: input.lastName,
+      externalId: input.externalId,
+    })
+    return normaliseCustomer((result.data ?? {}) as RawCustomer)
   } catch (err) {
     throw toThrottleApiError(err)
   }
@@ -85,17 +74,18 @@ export async function getCustomer(customerId: string): Promise<ThrottleCustomer>
   configureApiClient()
   try {
     const result = await CustomersService.getApiV1Customers1(customerId)
-    return normaliseCustomer(result.data as RawCustomer)
+    return normaliseCustomer((result.data ?? {}) as RawCustomer)
   } catch (err) {
     throw toThrottleApiError(err)
   }
 }
 
 /**
- * Look up a Throttle customer by the auth provider's user id. Useful
- * when the Clerk metadata link is missing (manual customer creation,
- * metadata wipe, etc.) and we want to rebuild it without creating a
- * duplicate.
+ * Look up a Throttle customer by the auth provider's user id. Used to
+ * recover the customer link when an auth-provider metadata cache is
+ * missing (manual customer creation, metadata wipe, etc.) without
+ * creating a duplicate. The api-client types this endpoint as `any`,
+ * so we unwrap defensively.
  */
 export async function getCustomerByExternalId(
   externalId: string
@@ -107,7 +97,9 @@ export async function getCustomerByExternalId(
     )) as { data?: RawCustomer } | RawCustomer | null
     if (!result) return null
     const data: RawCustomer | undefined =
-      "data" in (result as object) ? (result as { data?: RawCustomer }).data : (result as RawCustomer)
+      "data" in (result as object)
+        ? (result as { data?: RawCustomer }).data
+        : (result as RawCustomer)
     if (!data || !data.id) return null
     return normaliseCustomer(data)
   } catch (err) {

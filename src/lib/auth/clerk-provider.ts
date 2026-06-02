@@ -18,9 +18,16 @@ interface ClerkPrivateMetadata {
  * Resolve (or lazily create) the Throttle customer id for a Clerk user.
  *
  * Lookup chain:
- *   1. Clerk privateMetadata.throttleCustomerId — fast path, single roundtrip avoided
- *   2. Throttle GET /customers/by-external/{clerkUserId} — recover when metadata is missing
- *   3. POST /customers — first-time visitor; persist the new id back to Clerk
+ *   1. Clerk privateMetadata.throttleCustomerId — fast-path cache, avoids a roundtrip
+ *   2. Throttle GET /customers/by-external/{clerkUserId} — durable link; the
+ *      Clerk user id is stored as the customer's `externalId`, so this recovers
+ *      the customer even if the Clerk metadata cache is wiped
+ *   3. POST /customers — first-time visitor; create with externalId set, then
+ *      cache the id back to Clerk
+ *
+ * Step 2 is the source of truth; step 1 is just a cache. (Both the
+ * `externalId` write on create and the by-external lookup require a
+ * Throttle API that honors `externalId` — confirmed working.)
  *
  * Throttle calls are best-effort: if the workspace isn't configured
  * (no STORE_ID, no API_KEY) we return undefined and let the caller

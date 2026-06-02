@@ -33,18 +33,26 @@ export async function getOrder(orderId: string): Promise<ThrottleOrder> {
 }
 
 export interface ListOrdersInput {
-  /**
-   * Note: Throttle's REST orders endpoint does not natively filter by
-   * email. The starter caller passes the customer's email and we look
-   * up the matching customer first — but customer creation is out of
-   * scope for this starter, so this falls back to listing all orders
-   * for now. See feedback.
-   */
-  email?: string
   customerId?: string
-  storeId?: string
   limit?: number
   cursor?: string
+}
+
+interface RawListOrder {
+  id?: string
+  orderNumber?: string
+  status?: ThrottleOrder["status"]
+  paymentStatus?: ThrottleOrder["paymentStatus"]
+  fulfillmentStatus?: ThrottleOrder["fulfillmentStatus"]
+  currency?: string
+  subtotal?: number
+  taxTotal?: number
+  discountTotal?: number
+  shippingTotal?: number
+  total?: number
+  metadata?: Record<string, unknown>
+  createdAt?: string
+  updatedAt?: string
 }
 
 export async function listOrders(
@@ -52,6 +60,8 @@ export async function listOrders(
 ): Promise<{ orders: ThrottleOrder[]; nextCursor: string | null }> {
   configureApiClient()
   try {
+    // No store/application filter arg — the API key already scopes the
+    // query to the workspace. (api-client ≥1.4.2 dropped that param.)
     const result = await OrdersService.getApiV1Orders(
       input.cursor,
       input.limit ?? 25,
@@ -60,37 +70,33 @@ export async function listOrders(
       undefined, // type
       undefined, // source
       undefined, // q
-      input.customerId,
-      input.storeId ?? env.THROTTLE_STORE_ID
+      input.customerId
     )
-    // api-client's TypeScript types are snake_case but Throttle's REST
-    // actually returns camelCase, so the types lie. Read both keys with
-    // a fallback so we work regardless of which side gets fixed.
-    type LooseOrder = Record<string, unknown>
-    const pick = <T,>(o: LooseOrder, snake: string, camel: string): T | undefined =>
-      (o[camel] as T | undefined) ?? (o[snake] as T | undefined)
-
+    // The list endpoint does not embed line items — fetch the full
+    // order via getOrder() when you need them. api-client ≥1.4.2
+    // returns camelCase fields matching its types, so we read directly.
+    const now = new Date().toISOString()
     const orders: ThrottleOrder[] = (result.data ?? []).map((raw) => {
-      const o = raw as LooseOrder
+      const o = raw as RawListOrder
       return {
-        id: (o.id as string) ?? "",
+        id: o.id ?? "",
         cartId: null,
         customerId: null,
-        orderNumber: pick<string>(o, "order_number", "orderNumber") ?? "",
-        status: (pick<string>(o, "status", "status") ?? "draft") as ThrottleOrder["status"],
-        paymentStatus: (pick<string>(o, "payment_status", "paymentStatus") ?? "pending") as ThrottleOrder["paymentStatus"],
-        fulfillmentStatus: (pick<string>(o, "fulfillment_status", "fulfillmentStatus") ?? "unfulfilled") as ThrottleOrder["fulfillmentStatus"],
-        currency: (o.currency as string) ?? "USD",
-        subtotal: (o.subtotal as number) ?? 0,
-        taxTotal: pick<number>(o, "tax_total", "taxTotal") ?? 0,
-        discountTotal: pick<number>(o, "discount_total", "discountTotal") ?? 0,
-        shippingTotal: pick<number>(o, "shipping_total", "shippingTotal") ?? 0,
-        total: (o.total as number) ?? 0,
+        orderNumber: o.orderNumber ?? "",
+        status: o.status ?? "draft",
+        paymentStatus: o.paymentStatus ?? "pending",
+        fulfillmentStatus: o.fulfillmentStatus ?? "unfulfilled",
+        currency: o.currency ?? "USD",
+        subtotal: o.subtotal ?? 0,
+        taxTotal: o.taxTotal ?? 0,
+        discountTotal: o.discountTotal ?? 0,
+        shippingTotal: o.shippingTotal ?? 0,
+        total: o.total ?? 0,
         shippingAddress: null,
         billingAddress: null,
-        metadata: (o.metadata as Record<string, unknown>) ?? {},
-        createdAt: pick<string>(o, "created_at", "createdAt") ?? new Date().toISOString(),
-        updatedAt: pick<string>(o, "updated_at", "updatedAt") ?? new Date().toISOString(),
+        metadata: o.metadata ?? {},
+        createdAt: o.createdAt ?? now,
+        updatedAt: o.updatedAt ?? now,
         completedAt: null,
         cancelledAt: null,
       }
