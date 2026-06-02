@@ -10,6 +10,7 @@ import { OrderStatusBadge } from "@/components/ui/order-status-badge"
 import { ChevronLeft, Plus, RotateCcw } from "lucide-react"
 import { useAuthGuard } from "@/hooks/use-auth-guard"
 import { useReorder } from "@/hooks/use-reorder"
+import { OrderDetailSkeleton } from "@/components/account/account-skeletons"
 import { formatPrice, formatDate } from "@/lib/utils"
 import type { ThrottleOrder } from "@/lib/throttle"
 
@@ -83,7 +84,13 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
   if (!order) {
     return (
       <div className="mx-auto max-w-3xl px-4 py-16 sm:px-6 lg:px-8">
-        <p className="text-sm text-muted-foreground">Loading order…</p>
+        <Link
+          href="/account/orders"
+          className="inline-flex items-center text-sm text-muted-foreground hover:text-foreground"
+        >
+          <ChevronLeft className="mr-1 h-4 w-4" /> Back to orders
+        </Link>
+        <OrderDetailSkeleton />
       </div>
     )
   }

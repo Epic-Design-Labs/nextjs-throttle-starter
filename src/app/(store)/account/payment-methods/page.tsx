@@ -8,6 +8,7 @@ import { PageHeader } from "@/components/ui/page-header"
 import { EmptyState } from "@/components/ui/empty-state"
 import { CreditCard, Star, Trash2 } from "lucide-react"
 import { useAuthGuard } from "@/hooks/use-auth-guard"
+import { CardRowsSkeleton } from "@/components/account/account-skeletons"
 import { toast } from "sonner"
 
 const clerkConfigured = Boolean(
@@ -149,7 +150,7 @@ export default function PaymentMethodsPage() {
       />
 
       {loading ? (
-        <p className="mt-8 text-sm text-muted-foreground">Loading payment methods…</p>
+        <CardRowsSkeleton rows={2} />
       ) : methods.length === 0 ? (
         <EmptyState
           icon={CreditCard}

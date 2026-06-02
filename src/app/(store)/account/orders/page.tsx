@@ -12,6 +12,7 @@ import { EmptyState } from "@/components/ui/empty-state"
 import { OrderStatusBadge } from "@/components/ui/order-status-badge"
 import { useAuthGuard } from "@/hooks/use-auth-guard"
 import { useReorder } from "@/hooks/use-reorder"
+import { CardRowsSkeleton } from "@/components/account/account-skeletons"
 import { formatPrice, formatDate } from "@/lib/utils"
 import type { ThrottleOrder } from "@/lib/throttle"
 
@@ -142,7 +143,7 @@ export default function OrdersPage() {
     return (
       <div className="mx-auto max-w-3xl px-4 py-16 sm:px-6 lg:px-8">
         <PageHeader title="Order History" />
-        <p className="mt-8 text-sm text-muted-foreground">Loading orders…</p>
+        <CardRowsSkeleton />
       </div>
     )
   }

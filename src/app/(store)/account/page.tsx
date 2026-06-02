@@ -22,6 +22,7 @@ import {
 import { useAuthGuard } from "@/hooks/use-auth-guard"
 import { useCurrentUser } from "@/hooks/use-current-user"
 import { useReorder } from "@/hooks/use-reorder"
+import { DashboardCardSkeleton } from "@/components/account/account-skeletons"
 import { formatPrice, formatDate } from "@/lib/utils"
 import type { ThrottleOrder } from "@/lib/throttle"
 
@@ -227,9 +228,7 @@ function RecentOrderCard({
         </CardTitle>
       </CardHeader>
       <CardContent>
-        {loading && (
-          <p className="text-sm text-muted-foreground">Loading…</p>
-        )}
+        {loading && <DashboardCardSkeleton />}
         {!loading && !order && (
           <div className="flex flex-col items-start gap-3 py-2">
             <p className="text-sm text-muted-foreground">
@@ -308,9 +307,7 @@ function DefaultAddressCard({
         </CardTitle>
       </CardHeader>
       <CardContent>
-        {loading && (
-          <p className="text-sm text-muted-foreground">Loading…</p>
-        )}
+        {loading && <DashboardCardSkeleton />}
         {!loading && !address && (
           <div className="flex flex-col items-start gap-3 py-2">
             <p className="text-sm text-muted-foreground">

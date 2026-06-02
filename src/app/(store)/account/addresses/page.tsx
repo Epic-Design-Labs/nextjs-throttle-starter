@@ -10,6 +10,7 @@ import { PageHeader } from "@/components/ui/page-header"
 import { EmptyState } from "@/components/ui/empty-state"
 import { MapPin, Plus, Trash2 } from "lucide-react"
 import { useAuthGuard } from "@/hooks/use-auth-guard"
+import { CardRowsSkeleton } from "@/components/account/account-skeletons"
 import { toast } from "sonner"
 
 const clerkConfigured = Boolean(
@@ -218,7 +219,7 @@ export default function AddressesPage() {
       )}
 
       {loading ? (
-        <p className="mt-8 text-sm text-muted-foreground">Loading addresses…</p>
+        <CardRowsSkeleton rows={2} />
       ) : addresses.length === 0 && !showForm ? (
         <EmptyState
           icon={MapPin}
