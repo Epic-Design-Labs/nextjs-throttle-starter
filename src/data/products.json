@@ -731,7 +731,7 @@
           "price": 8900,
           "currency": "USD",
           "inventory": {
-            "quantity": 15,
+            "quantity": 4,
             "trackInventory": true,
             "allowBackorder": false
           },
@@ -1025,7 +1025,7 @@
           "price": 4200,
           "currency": "USD",
           "inventory": {
-            "quantity": 20,
+            "quantity": 0,
             "trackInventory": true,
             "allowBackorder": false
           },

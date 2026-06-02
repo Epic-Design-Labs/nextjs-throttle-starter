@@ -26,6 +26,7 @@ import { VariantSelector } from "@/components/products/variant-selector"
 import { QuantitySelector } from "@/components/products/quantity-selector"
 import { ProductGrid } from "@/components/products/product-grid"
 import { formatPrice } from "@/lib/utils"
+import { LOW_STOCK_THRESHOLD } from "@/lib/constants"
 import { breadcrumbJsonLd } from "@/lib/structured-data"
 import type { Product, Brand, Category } from "@/types"
 
@@ -79,9 +80,15 @@ export function ProductDetailView({
   const isOnSale =
     selectedVariant.compareAtPrice &&
     selectedVariant.compareAtPrice > selectedVariant.price
-  const inStock =
-    selectedVariant.inventory.quantity > 0 ||
-    selectedVariant.inventory.allowBackorder
+  const inventory = selectedVariant.inventory
+  const inStock = inventory.quantity > 0 || inventory.allowBackorder
+  // "Only N left" applies only to tracked variants that can't be
+  // backordered (a backorderable item is effectively never low).
+  const lowStock =
+    inventory.trackInventory &&
+    !inventory.allowBackorder &&
+    inventory.quantity > 0 &&
+    inventory.quantity <= LOW_STOCK_THRESHOLD
 
   function handleAddToCart() {
     addToCart({
@@ -263,6 +270,16 @@ export function ProductDetailView({
               {inStock ? "Add to Cart" : "Out of Stock"}
             </Button>
           </div>
+
+          {inStock && lowStock && (
+            <p className="mt-2 flex items-center gap-1.5 text-sm font-medium text-amber-600 dark:text-amber-500">
+              <span
+                className="inline-block h-2 w-2 rounded-full bg-amber-500"
+                aria-hidden
+              />
+              Only {inventory.quantity} left in stock — order soon
+            </p>
+          )}
 
           {!inStock && (
             <p className="mt-2 text-sm text-destructive">
