@@ -6,7 +6,7 @@
       "slug": "electronics",
       "description": "Headphones, speakers, and everyday tech essentials. Built to last and designed to sound great wherever you go.",
       "image": {
-        "url": "/images/products/placeholder.svg",
+        "url": "/images/products/placeholder.png",
         "alt": "Electronics"
       },
       "order": 1
@@ -17,7 +17,7 @@
       "slug": "clothing",
       "description": "Comfortable, well-made basics for every day. Organic fabrics and relaxed fits that look good and feel even better.",
       "image": {
-        "url": "/images/products/placeholder.svg",
+        "url": "/images/products/placeholder.png",
         "alt": "Clothing"
       },
       "order": 2
@@ -28,7 +28,7 @@
       "slug": "home-kitchen",
       "description": "Thoughtful pieces for your living space. From lighting to textiles, everything you need to make a house feel like home.",
       "image": {
-        "url": "/images/products/placeholder.svg",
+        "url": "/images/products/placeholder.png",
         "alt": "Home & Kitchen"
       },
       "order": 3
@@ -39,7 +39,7 @@
       "slug": "accessories",
       "description": "Bags, wallets, and everyday carry. Crafted from premium materials that age beautifully with use.",
       "image": {
-        "url": "/images/products/placeholder.svg",
+        "url": "/images/products/placeholder.png",
         "alt": "Accessories"
       },
       "order": 4
@@ -50,7 +50,7 @@
       "slug": "food-drink",
       "description": "Coffee, tea, and specialty treats. Sourced from small producers who care about quality and sustainability.",
       "image": {
-        "url": "/images/products/placeholder.svg",
+        "url": "/images/products/placeholder.png",
         "alt": "Food & Drink"
       },
       "order": 6
@@ -88,13 +88,13 @@
       "description": "Premium wireless headphones with active noise cancellation, 30-hour battery life, and ultra-comfortable memory foam ear cushions.",
       "images": [
         {
-          "url": "/images/products/placeholder.svg",
+          "url": "/images/products/placeholder.png",
           "alt": "Wireless headphones front view",
           "width": 800,
           "height": 800
         },
         {
-          "url": "/images/products/placeholder.svg",
+          "url": "/images/products/placeholder.png",
           "alt": "Wireless headphones side view",
           "width": 800,
           "height": 800
@@ -169,7 +169,7 @@
       "description": "A clean, adjustable LED desk lamp with three brightness levels and a warm-to-cool color temperature dial. Solid aluminum construction.",
       "images": [
         {
-          "url": "/images/products/placeholder.svg",
+          "url": "/images/products/placeholder.png",
           "alt": "Desk lamp on workspace",
           "width": 800,
           "height": 800
@@ -241,7 +241,7 @@
       "description": "Heavyweight 100% organic cotton tee with a relaxed fit. Pre-shrunk and garment-dyed for a lived-in feel from day one.",
       "images": [
         {
-          "url": "/images/products/placeholder.svg",
+          "url": "/images/products/placeholder.png",
           "alt": "Cotton t-shirt front",
           "width": 800,
           "height": 800
@@ -369,7 +369,7 @@
       "description": "Handcrafted ceramic dripper with a walnut wood collar. Brews a clean, bright cup. Includes a reusable stainless steel filter.",
       "images": [
         {
-          "url": "/images/products/placeholder.svg",
+          "url": "/images/products/placeholder.png",
           "alt": "Pour-over coffee maker",
           "width": 800,
           "height": 800
@@ -416,13 +416,13 @@
       "description": "Full-grain vegetable-tanned leather passport wallet. Fits a passport, 4 cards, and boarding passes. Ages beautifully over time.",
       "images": [
         {
-          "url": "/images/products/placeholder.svg",
+          "url": "/images/products/placeholder.png",
           "alt": "Leather wallet closed",
           "width": 800,
           "height": 800
         },
         {
-          "url": "/images/products/placeholder.svg",
+          "url": "/images/products/placeholder.png",
           "alt": "Leather wallet open",
           "width": 800,
           "height": 800
@@ -493,7 +493,7 @@
       "description": "Ethically sourced single-origin beans from Colombia. Medium roast with notes of chocolate, caramel, and citrus. 12oz bag, whole bean.",
       "images": [
         {
-          "url": "/images/products/placeholder.svg",
+          "url": "/images/products/placeholder.png",
           "alt": "Coffee beans bag",
           "width": 800,
           "height": 800
@@ -564,7 +564,7 @@
       "description": "Waterproof portable speaker with 360-degree sound and 12-hour battery life. Compact enough for any adventure.",
       "images": [
         {
-          "url": "/images/products/placeholder.svg",
+          "url": "/images/products/placeholder.png",
           "alt": "Bluetooth speaker",
           "width": 800,
           "height": 800
@@ -636,7 +636,7 @@
       "description": "Stonewashed French linen cover with a feather-down insert. 20x20 inches. Removable, machine-washable cover.",
       "images": [
         {
-          "url": "/images/products/placeholder.svg",
+          "url": "/images/products/placeholder.png",
           "alt": "Linen throw pillow",
           "width": 800,
           "height": 800
@@ -707,7 +707,7 @@
       "description": "Waxed canvas weekender with leather handles and brass hardware. Separate shoe compartment. Fits overhead bins.",
       "images": [
         {
-          "url": "/images/products/placeholder.svg",
+          "url": "/images/products/placeholder.png",
           "alt": "Canvas weekender bag",
           "width": 800,
           "height": 800
@@ -758,7 +758,7 @@
       "description": "192 pages of 100gsm acid-free paper with a dot grid pattern. Lay-flat binding, ribbon bookmark, and elastic closure.",
       "images": [
         {
-          "url": "/images/products/placeholder.svg",
+          "url": "/images/products/placeholder.png",
           "alt": "Dot grid notebook",
           "width": 800,
           "height": 800
@@ -837,7 +837,7 @@
       "description": "Extra-fine merino wool beanie. Soft, breathable, and itch-free. Double-layered for warmth without bulk.",
       "images": [
         {
-          "url": "/images/products/placeholder.svg",
+          "url": "/images/products/placeholder.png",
           "alt": "Merino wool beanie",
           "width": 800,
           "height": 800
@@ -909,7 +909,7 @@
       "description": "100% natural soy wax candle in a reusable ceramic vessel. 60-hour burn time. Available in three signature scents.",
       "images": [
         {
-          "url": "/images/products/placeholder.svg",
+          "url": "/images/products/placeholder.png",
           "alt": "Soy candle",
           "width": 800,
           "height": 800
@@ -1000,7 +1000,7 @@
       "description": "Traditional matcha preparation set with a ceramic bowl (chawan), bamboo whisk (chasen), and bamboo scoop (chashaku). Includes 30g ceremonial grade matcha.",
       "images": [
         {
-          "url": "/images/products/placeholder.svg",
+          "url": "/images/products/placeholder.png",
           "alt": "Matcha set",
           "width": 800,
           "height": 800
@@ -1047,7 +1047,7 @@
       "description": "Slim 15W fast wireless charger compatible with all Qi-enabled devices. Non-slip silicone surface, LED indicator, and built-in safety features.",
       "images": [
         {
-          "url": "/images/products/placeholder.svg",
+          "url": "/images/products/placeholder.png",
           "alt": "Wireless charging pad",
           "width": 800,
           "height": 800
