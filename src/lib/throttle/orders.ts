@@ -18,17 +18,15 @@ function configureApiClient() {
 }
 
 /**
- * Fetch a single order with line items, via the hand-written
- * checkout SDK. Richer payload than the api-client equivalent.
+ * Fetch a single order with line items + payments via the checkout SDK.
  */
 export async function getOrder(orderId: string): Promise<ThrottleOrder> {
   const o = await callThrottle(() =>
     getCheckoutClient().getOrderWithPayments(orderId)
   )
-  // The checkout-sdk's CheckoutOrder type is loosely typed
-  // (`[key: string]: unknown`). Cast through unknown to land on our
-  // domain shape — fields we depend on (id, orderNumber, status, total
-  // etc.) are confirmed present from the API contract.
+  // checkout-sdk types CheckoutOrder with an open index signature; map it
+  // onto our domain shape. The fields we read (id, orderNumber, status,
+  // total, …) are part of the order contract.
   return o as unknown as ThrottleOrder
 }
 
@@ -60,8 +58,8 @@ export async function listOrders(
 ): Promise<{ orders: ThrottleOrder[]; nextCursor: string | null }> {
   configureApiClient()
   try {
-    // No store/application filter arg — the API key already scopes the
-    // query to the workspace. (api-client ≥1.4.2 dropped that param.)
+    // The API key already scopes the query to the workspace, so no
+    // store/application filter is passed.
     const result = await OrdersService.getApiV1Orders(
       input.cursor,
       input.limit ?? 25,
@@ -73,8 +71,7 @@ export async function listOrders(
       input.customerId
     )
     // The list endpoint does not embed line items — fetch the full
-    // order via getOrder() when you need them. api-client ≥1.4.2
-    // returns camelCase fields matching its types, so we read directly.
+    // order via getOrder() when you need them.
     const now = new Date().toISOString()
     const orders: ThrottleOrder[] = (result.data ?? []).map((raw) => {
       const o = raw as RawListOrder

@@ -92,10 +92,8 @@ export interface CreateCartInput {
 }
 
 export async function createCart(input: CreateCartInput = {}): Promise<ThrottleCart> {
-  // Throttle's cart create API recently renamed `storeId` → `applicationId`
-  // and now rejects `storeId` as an unknown field. The SDK's typed union
-  // still accepts either, so we send `applicationId`. THROTTLE_STORE_ID
-  // env name kept for continuity — it just *holds* the application uuid.
+  // Carts belong to an application (store). THROTTLE_STORE_ID holds that
+  // application's uuid.
   const sdk = await callThrottle(() =>
     getCartClient().carts.create({
       applicationId: requireStoreId(),
@@ -107,9 +105,8 @@ export async function createCart(input: CreateCartInput = {}): Promise<ThrottleC
       },
     })
   )
-  // The cart-SDK's create endpoint does not accept addresses inline, so
-  // we PATCH them in if the caller supplied any. (Mirrors a footgun in
-  // the raw REST API where shippingAddress on POST is silently dropped.)
+  // Addresses aren't part of the create payload — set them with a
+  // follow-up update when the caller supplies them.
   if (input.shippingAddress || input.billingAddress) {
     const patched = await callThrottle(() =>
       getCartClient().carts.update(sdk.id, {

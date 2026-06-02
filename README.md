@@ -245,10 +245,10 @@ read throttleCustomerId from the session — never from the request body.
 | `src/lib/throttle/clients.ts` | Lazy `CartClient` + `CheckoutClient` singletons. |
 | `src/lib/throttle/cart.ts` | `createCart`, `addCartItem(s)`, `updateCartItem`, `removeCartItem`, `checkoutCart`, `getCart` — via `@usethrottle/cart`. |
 | `src/lib/throttle/sessions.ts` | `createEmbedSession` via `@usethrottle/checkout-sdk`. |
-| `src/lib/throttle/orders.ts` | `getOrder` via `checkout-sdk`; `listOrders` via `api-client` (with defensive camel/snake mapping). |
+| `src/lib/throttle/orders.ts` | `getOrder` via `checkout-sdk`; `listOrders` via `api-client`. |
 | `src/lib/throttle/customers.ts` | `createCustomer`, `getCustomer`, `getCustomerByExternalId`. |
-| `src/lib/throttle/customer-addresses.ts` | `listAddresses`, `createAddress`, `updateAddress`, `deleteAddress`. PATCH/DELETE fall back to direct fetch because the api-client URL builder is broken for two-segment paths. |
-| `src/lib/throttle/payment-methods.ts` | `listPaymentMethods`, `setDefaultPaymentMethod`, `removePaymentMethod`. Same direct-fetch fallback for PATCH/DELETE. |
+| `src/lib/throttle/customer-addresses.ts` | `listAddresses`, `createAddress`, `updateAddress`, `deleteAddress`, `saveAddressIfNew` — via `@usethrottle/api-client`. |
+| `src/lib/throttle/payment-methods.ts` | `listPaymentMethods`, `setDefaultPaymentMethod`, `removePaymentMethod` — via `@usethrottle/api-client`. |
 | `src/lib/throttle/webhook.ts` | `verifyThrottleSignature` (`X-Throttle-Signature`). |
 | `src/lib/throttle/checkout-provider.ts` | Implements the local `CheckoutProvider` interface against Throttle. |
 | `src/lib/auth/*` | `AuthProvider` port + Clerk impl + demo fallback. |
@@ -345,7 +345,7 @@ For local dev, expose your dev server with a tunnel (ngrok, cloudflared, etc.) a
 |-----------|-----|
 | **No price tampering.** Server is the only source of truth for line-item prices. | `POST /api/throttle/cart/{id}/items` accepts only `{ variantId, quantity }`; `name`, `unitPrice`, `imageUrl`, `description` are read from `productRepository.findVariant(variantId)`. |
 | **No IDOR on order routes.** Buyers can't enumerate or read other buyers' orders. | `/api/throttle/orders*` reads the customer id from the Clerk session and rejects any request without one. The `[id]` route additionally compares `order.customerId` to the session before returning. |
-| **No SSRF via path traversal.** Dynamic route params can't redirect upstream fetches. | `requireUuid()` at every dynamic-route boundary rejects non-UUID segments with `400 invalid_id`. `customer-addresses.ts` also `encodeURIComponent`s its segments as defense in depth. |
+| **No SSRF via path traversal.** Dynamic route params can't redirect upstream fetches. | `requireUuid()` at every dynamic-route boundary rejects non-UUID segments with `400 invalid_id` before any id reaches the SDK. |
 | **Webhooks verified.** Both Throttle and Clerk webhooks are HMAC/svix-verified before any handler runs. | `src/lib/throttle/webhook.ts` (HMAC-SHA256 + timestamp tolerance) and `verifyWebhook` from `@clerk/nextjs/webhooks`. |
 | **CSP locked down.** Inline frames + external script origins explicitly allow-listed. | `src/middleware.ts` composes `clerkMiddleware()` with strict CSP allowing only `clerk.com`, `clerk.accounts.dev`, `checkout.usethrottle.dev`. |
 

@@ -148,16 +148,11 @@ export async function cancelSubscription(
 ): Promise<ThrottleSubscription> {
   configureApiClient()
   try {
-    // api-client's typed schema only exposes a subset; cast through to
-    // send cancel_at_period_end + reason if provided.
-    const body = {
-      cancel_at_period_end: options.atPeriodEnd,
-      reason: options.reason,
-    } as Parameters<typeof SubscriptionsService.postApiV1SubscriptionsCancel>[1]
-    const result = (await SubscriptionsService.postApiV1SubscriptionsCancel(
-      id,
-      body
-    )) as { data?: RawSubscription }
+    // `atPeriodEnd: true` cancels at the end of the current billing
+    // period; otherwise it cancels immediately.
+    const result = (await SubscriptionsService.postApiV1SubscriptionsCancel(id, {
+      atPeriodEnd: options.atPeriodEnd,
+    })) as { data?: RawSubscription }
     return normalise(result.data ?? {})
   } catch (err) {
     throw toThrottleApiError(err)

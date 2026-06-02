@@ -22,19 +22,16 @@ export interface CreateEmbedSessionInput {
 /**
  * Mint a PaymentEmbed session via `@usethrottle/checkout-sdk`.
  *
- * Note: the SDK's `createEmbedToken` only accepts `{ amount, currency,
- * country, externalCartId, allowedMethods }` — it does NOT take a
- * storeId, customer info, or addresses. (The raw REST endpoint does.)
- * That's a real SDK gap — see lib/throttle/feedback for details.
- *
- * For now we just call what the SDK gives us and ignore the unused
- * inputs. Once the SDK exposes them, plumb them through here.
+ * `createEmbedToken` takes `{ amount, currency, country, externalCartId,
+ * allowedMethods }`. Customer details and addresses live on the cart and
+ * the embed flow, so they aren't passed here; the extra fields on
+ * {@link CreateEmbedSessionInput} are accepted for caller convenience.
  */
 export async function createEmbedSession(
   input: CreateEmbedSessionInput
 ): Promise<ThrottleEmbedSession> {
-  // Touch requireStoreId so an unconfigured workspace fails fast with a
-  // clearer message than the SDK's downstream 400.
+  // Validate configuration up front so an unconfigured workspace fails
+  // with a clear message instead of a downstream 400.
   requireStoreId()
   const result = await callThrottle(() =>
     getCheckoutClient().createEmbedToken({
