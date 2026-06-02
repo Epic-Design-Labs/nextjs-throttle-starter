@@ -9,6 +9,7 @@ import {
   BreadcrumbPage,
   BreadcrumbSeparator,
 } from "@/components/ui/breadcrumb"
+import { MarkdownContent } from "@/components/content/markdown-content"
 import { breadcrumbJsonLd } from "@/lib/structured-data"
 import { pageRepository } from "@/lib/repositories"
 import { formatDate } from "@/lib/utils"
@@ -82,10 +83,7 @@ export default async function CmsPageDetail({ params }: PageProps) {
           </p>
         </header>
 
-        <div
-          className="blog-body mt-10"
-          dangerouslySetInnerHTML={{ __html: page.body }}
-        />
+        <MarkdownContent className="mt-10">{page.body}</MarkdownContent>
       </article>
     </div>
   )

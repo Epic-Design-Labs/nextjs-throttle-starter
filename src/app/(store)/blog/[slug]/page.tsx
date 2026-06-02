@@ -11,6 +11,7 @@ import {
   BreadcrumbSeparator,
 } from "@/components/ui/breadcrumb"
 import { Badge } from "@/components/ui/badge"
+import { MarkdownContent } from "@/components/content/markdown-content"
 import { breadcrumbJsonLd } from "@/lib/structured-data"
 import { blogRepository } from "@/lib/repositories"
 import { formatDate } from "@/lib/utils"
@@ -127,10 +128,7 @@ export default async function BlogPostPage({ params }: PostProps) {
           />
         </div>
 
-        <div
-          className="blog-body mt-10"
-          dangerouslySetInnerHTML={{ __html: post.body }}
-        />
+        <MarkdownContent className="mt-10">{post.body}</MarkdownContent>
 
         {post.tags.length > 0 && (
           <footer className="mt-12 border-t pt-6">

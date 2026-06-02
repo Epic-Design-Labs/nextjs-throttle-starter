@@ -19,7 +19,7 @@ export interface CmsPage {
   slug: string
   /** Short summary shown on the pages index */
   excerpt?: string
-  /** Full HTML content rendered with .blog-body prose */
+  /** Markdown content, rendered with <MarkdownContent /> (.blog-body prose) */
   body: string
   publishedAt: string
   updatedAt?: string

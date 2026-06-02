@@ -127,11 +127,15 @@ src/
     products/, cart/, search/, auth/, checkout/
   data/
     products.json             # Product catalog (Throttle is BYO-catalog)
+  content/
+    blog/*.md                 # Blog posts (markdown + frontmatter)
+    pages/*.md                # CMS pages (markdown + frontmatter)
   lib/
     config.ts                 # Store name, contact, etc
     env.ts                    # Zod-validated env
     navigation.ts             # Menu config
-    repositories/             # Catalog data access (JSON-backed)
+    content/markdown.ts       # Markdown file loader (gray-matter)
+    repositories/             # Data access (products JSON, blog/pages markdown)
     validators/               # Zod schemas
     auth/                     # AuthProvider port + Clerk impl + demo fallback
       types.ts                #   AuthProvider, AuthUser interfaces
@@ -173,6 +177,8 @@ Everything is configurable from a few key files:
 | Theme colors (rating, wishlist, status) | `src/app/globals.css` |
 | Navigation (desktop + mobile) | `src/lib/navigation.ts` |
 | Products, categories, brands | `src/data/products.json` |
+| Blog posts | `content/blog/*.md` (markdown + frontmatter) |
+| CMS pages | `content/pages/*.md` (markdown + frontmatter) |
 | Translations | `messages/en.json`, `messages/es.json` |
 
 See [CUSTOMIZATION.md](docs/CUSTOMIZATION.md) for the full guide.

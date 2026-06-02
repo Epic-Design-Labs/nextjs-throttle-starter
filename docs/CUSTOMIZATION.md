@@ -102,6 +102,32 @@ Product data lives in `src/data/products.json`. To add a product:
 
 Note: this starter is **bring-your-own-catalog** — Throttle is the commerce engine (cart, checkout, orders, customers, subscriptions), but your product catalog lives in `products.json` (or whatever you swap in). To move the catalog to a CMS or database, implement the `ProductRepository` / `CategoryRepository` interfaces from `src/types/index.ts` and update `src/lib/repositories/index.ts`.
 
+## Blog & Pages (Markdown)
+
+Blog posts and CMS pages are plain markdown files — no CMS required:
+
+- `content/blog/<slug>.md` → `/blog/<slug>`
+- `content/pages/<slug>.md` → `/pages/<slug>`
+
+The **filename is the URL slug**; YAML frontmatter holds the metadata; the markdown body renders via `react-markdown` (GitHub-flavored markdown, XSS-safe — raw HTML in the source is not rendered).
+
+```markdown
+---
+id: "post-7"
+title: "My New Post"
+excerpt: "A short summary for the listing page."
+author: "The Team"
+tags: ["guides"]
+publishedAt: "2026-01-01T10:00:00Z"
+---
+
+## A heading
+
+Body content in **markdown**. Internal [links](/contact) work too.
+```
+
+Add a post or page by dropping a new `.md` file in the folder — no code changes. Frontmatter fields map to the `BlogPost` / `CmsPage` types in `src/types/index.ts`. The loader is `src/lib/content/markdown.ts`; the repositories (`markdown-blog-repository.ts`, `markdown-page-repository.ts`) read these folders and are swappable like the product repository.
+
 ## Commerce Engine (Throttle)
 
 Throttle is pre-wired as the commerce engine — cart sync, checkout sessions, the `PaymentEmbed`, orders, customers, addresses, payment methods, discounts, shipping/tax, and subscriptions. The wiring lives in `src/lib/throttle/*` and `src/app/api/throttle/*`.
