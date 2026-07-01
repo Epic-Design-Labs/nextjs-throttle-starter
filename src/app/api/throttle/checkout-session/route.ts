@@ -87,6 +87,7 @@ export async function POST(req: NextRequest) {
   }
 
   try {
+    const origin = req.nextUrl.origin
     const session = await checkoutProvider.createSession(cart, {
       email: parsed.data.customer.email,
       shippingAddress: {
@@ -96,6 +97,8 @@ export async function POST(req: NextRequest) {
         isDefault: true,
       },
       throttleCartId: parsed.data.throttleCartId,
+      returnUrl: `${origin}/checkout/success`,
+      cancelUrl: `${origin}/checkout`,
     })
 
     // Remember the buyer's shipping address on their Throttle customer

@@ -331,9 +331,18 @@ export interface CheckoutProvider {
       shippingAddress?: Address
       /** Optional engine-specific cart id (e.g. Throttle cart UUID) to reuse. */
       throttleCartId?: string
+      /** Storefront URLs the checkout session returns to (engine may require). */
+      returnUrl?: string
+      cancelUrl?: string
     }
   ): Promise<CheckoutSession>
   getSession(sessionId: string): Promise<CheckoutSession>
+  /**
+   * Cancel/release an open checkout session when the buyer abandons payment,
+   * so the attempt is cleaned up engine-side. Idempotent; a no-op for engines
+   * with no server-side session.
+   */
+  cancelSession(sessionId: string): Promise<void>
   handleWebhook(
     payload: unknown,
     signature: string

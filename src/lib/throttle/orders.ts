@@ -2,6 +2,7 @@ import "server-only"
 
 import { OpenAPI, OrdersService } from "@usethrottle/api-client"
 import { callThrottle, toThrottleApiError } from "./client"
+import { getCartLineItems } from "./cart"
 import { getCheckoutClient } from "./clients"
 import { env } from "@/lib/env"
 import type { ThrottleOrder } from "./types"
@@ -28,6 +29,27 @@ export async function getOrder(orderId: string): Promise<ThrottleOrder> {
   // onto our domain shape. The fields we read (id, orderNumber, status,
   // total, …) are part of the order contract.
   return o as unknown as ThrottleOrder
+}
+
+/**
+ * Order for the post-checkout confirmation screen. Throttle keeps line items
+ * on the cart and an order references them via `cartId` rather than always
+ * embedding them, so hydrate `lineItems` from the cart when the order itself
+ * carries none.
+ */
+export async function getOrderConfirmation(
+  orderId: string
+): Promise<ThrottleOrder> {
+  const order = await getOrder(orderId)
+  const hasItems = (order.lineItems?.length ?? 0) > 0
+  const cartId = (order as { cartId?: string | null }).cartId
+  if (!hasItems && cartId) {
+    const lineItems = await getCartLineItems(cartId).catch(() => [])
+    if (lineItems.length > 0) {
+      return { ...order, lineItems }
+    }
+  }
+  return order
 }
 
 export interface ListOrdersInput {
@@ -61,6 +83,8 @@ export async function listOrders(
     // The API key already scopes the query to the workspace, so no
     // store/application filter is passed.
     const result = await OrdersService.getApiV1Orders(
+      undefined, // xThrottleEnvironmentId — added as the new leading arg in
+      // api-client v2; the API key already scopes the env, so leave it unset
       input.cursor,
       input.limit ?? 25,
       undefined, // status

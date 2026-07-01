@@ -41,21 +41,17 @@ export async function calculateShippingTax(
     selectedMethodId?: string | null
   } = {}
 ): Promise<ShippingTaxQuote> {
-  // The cart-SDK derives its address from the cart's own shippingAddress
-  // (set via carts.update). We update the cart first if a fresh address
-  // was provided so the calc has something to work with.
-  if (options.shippingAddress) {
-    await callThrottle(() =>
-      getCartClient().carts.update(cartId, {
-        shippingAddress: options.shippingAddress as Record<string, unknown>,
-      })
-    )
-  }
-
+  // Pass the destination inline so Throttle persists it to the cart and
+  // computes rates in a single round-trip (cart-sdk ≥3.5 + the inline-address
+  // calculate endpoint). This replaces the old carts.update-then-calculate
+  // sequence, halving checkout shipping latency.
   const calc = await callThrottle(() =>
     getCartClient().shippingTax.calculateCart(cartId, {
       kind: "cart_estimate",
       selectedShippingMethodId: options.selectedMethodId ?? null,
+      ...(options.shippingAddress
+        ? { shippingAddress: options.shippingAddress }
+        : {}),
     })
   )
 
@@ -111,7 +107,13 @@ export async function selectShippingMethod(
       "Selected shipping method is not available for this cart."
     )
   }
-  await callThrottle(() =>
+  // shipping.select locks the method AND returns the full updated cart with
+  // recomputed shipping + tax + totals in the same response, so the prior
+  // follow-up calculateShippingTax() was a redundant third round-trip (the
+  // "slow to update" lag). Confirmed atomic by the Throttle team; cart-sdk
+  // ≥3.5 types shipping.select as Promise<Cart>. We echo the methods list
+  // from the pre-select quote above so the UI keeps rendering the options.
+  const cart = await callThrottle(() =>
     getCartClient().shipping.select(cartId, {
       methodId: chosen.id,
       displayName: chosen.label,
@@ -119,5 +121,15 @@ export async function selectShippingMethod(
       currency: chosen.currency,
     })
   )
-  return calculateShippingTax(cartId, { selectedMethodId: chosen.id })
+  return {
+    methods: quoted.methods,
+    selectedMethodId: cart.selectedShipping?.methodId ?? chosen.id,
+    shippingTotal: cart.shippingTotal,
+    taxTotal: cart.taxTotal,
+    total: cart.total,
+    prompts: quoted.prompts,
+    warnings: quoted.warnings,
+    errors: quoted.errors,
+    unavailable: quoted.methods.length === 0 && quoted.errors.length === 0,
+  }
 }

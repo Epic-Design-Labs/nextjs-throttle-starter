@@ -6,8 +6,13 @@ import type {
   CheckoutSession,
   WebhookResult,
 } from "@/types"
-import { addCartItems, checkoutCart, createCart, getCart } from "./cart"
-import { createEmbedSession } from "./sessions"
+import {
+  addCartItems,
+  createCart,
+  getCart,
+  setCartShippingAddress,
+} from "./cart"
+import { cancelCheckoutSession, createCartBackedSession } from "./sessions"
 import { getOrder } from "./orders"
 import {
   THROTTLE_SIGNATURE_HEADER,
@@ -34,19 +39,25 @@ function toThrottleAddress(addr?: Address): ThrottleAddress | undefined {
  * CheckoutProvider implementation backed by Throttle.
  *
  * createSession runs the full server-side flow:
- *   1. Create a Throttle cart with the buyer's shipping address.
- *   2. Add every local cart line as a Throttle line item.
- *   3. Transition the cart into a draft order via /carts/:id/checkout.
- *   4. Mint a PaymentEmbed session against that order's total.
+ *   1. Resolve a Throttle cart with the buyer's items + shipping address.
+ *   2. Create a *cart-backed* checkout session over it.
  *
- * The returned `id` is the Throttle order id (durable across reloads).
- * `url` is the embedded checkout URL — useful as a fallback if the
- * React PaymentEmbed cannot mount.
+ * The PaymentEmbed drives that session and, on capture, finalizes a single
+ * order carrying the cart's line items, address and totals — no pre-created
+ * draft order, no separate bare payment order. The order id isn't known
+ * until payment succeeds (it arrives via the embed's `onSucceeded`), so the
+ * returned session `id` is the checkout session id, not an order id.
  */
 export const throttleCheckoutProvider: CheckoutProvider = {
   async createSession(
     cart: Cart,
-    customer?: { email: string; shippingAddress?: Address; throttleCartId?: string }
+    customer?: {
+      email: string
+      shippingAddress?: Address
+      throttleCartId?: string
+      returnUrl?: string
+      cancelUrl?: string
+    }
   ): Promise<CheckoutSession> {
     if (cart.items.length === 0) {
       throw new Error("Cannot create a checkout session for an empty cart.")
@@ -59,11 +70,16 @@ export const throttleCheckoutProvider: CheckoutProvider = {
     // when there isn't one yet (first-time flow / cart was cleared).
     let throttleCartId: string
     if (customer?.throttleCartId) {
-      // Verify the cart is still in `open` status. A "checked_out" cart
-      // would already have an order — re-running /checkout would 4xx.
+      // Verify the cart is still in `open` status. A "checked_out"/converted
+      // cart can't back a new session.
       const existing = await getCart(customer.throttleCartId).catch(() => null)
       if (existing && existing.status === "open") {
         throttleCartId = existing.id
+        // The cart may not carry the final shipping address yet (or the buyer
+        // edited it after the shipping quote) — write it so the order does.
+        if (shippingAddress) {
+          await setCartShippingAddress(throttleCartId, shippingAddress)
+        }
       } else {
         // Cart went away or already converted; build a fresh one.
         const fresh = await createCart({
@@ -110,41 +126,37 @@ export const throttleCheckoutProvider: CheckoutProvider = {
       throttleCartId = throttleCart.id
     }
 
-    const order = await checkoutCart(throttleCartId)
-    const session = await createEmbedSession({
-      amount: order.total,
-      currency: order.currency,
-      country: shippingAddress?.country ?? "US",
-      externalCartId: cart.id,
+    const session = await createCartBackedSession({
+      cartId: throttleCartId,
       customerEmail: customer?.email,
-      shippingAddress,
-      metadata: { orderId: order.id, throttleCartId },
+      // Required by Throttle even for the embed flow (no redirect happens).
+      // Fall back to the hosted checkout origin when the caller doesn't pass
+      // storefront URLs.
+      returnUrl:
+        customer?.returnUrl ?? env.NEXT_PUBLIC_THROTTLE_CHECKOUT_URL,
+      cancelUrl:
+        customer?.cancelUrl ?? env.NEXT_PUBLIC_THROTTLE_CHECKOUT_URL,
+      // No `allowedMethods` here: it isn't honored by the payment-only
+      // PaymentEmbed (Gr4vy iframe), and as of checkout-sdk 1.4 setting it on
+      // that path fails loud rather than being silently ignored. Restrict
+      // methods via the Gr4vy connector config instead.
     })
 
-    const status: CheckoutSession["status"] =
-      order.status === "completed"
-        ? "complete"
-        : order.status === "cancelled"
-          ? "expired"
-          : "open"
-
     return {
+      // The checkout session id — PaymentEmbed resolves its own embed token
+      // from it. The order id arrives later via the embed's onSucceeded.
       id: session.checkoutSessionId,
       url:
         session.embedUrl ??
         session.hostedUrl ??
         `${env.NEXT_PUBLIC_THROTTLE_CHECKOUT_URL}/c/${session.checkoutSessionId}`,
-      status,
-      orderId: order.id,
-      metadata: {
-        throttleCartId,
-        orderNumber: order.orderNumber,
-        embedToken: session.embedToken ?? "",
-        hostedUrl: session.hostedUrl ?? "",
-        total: String(order.total),
-        currency: order.currency,
-      },
+      status: "open",
+      metadata: { throttleCartId },
     }
+  },
+
+  async cancelSession(sessionId: string): Promise<void> {
+    await cancelCheckoutSession(sessionId)
   },
 
   async getSession(sessionId: string): Promise<CheckoutSession> {

@@ -8,32 +8,41 @@ import { useCartStore } from "@/store/cart"
 interface CartSummaryProps {
   subtotal: number
   /**
-   * When true (default), the summary reads discount / shipping / tax
-   * from the Throttle-synced cart store. Set false on surfaces that
-   * only want the local subtotal estimate (e.g. cart drawer preview).
+   * When true (default), the summary shows real shipping/tax bound to a live
+   * Throttle cart quote, passed in via `shipping`/`tax` (checkout). Set false
+   * on browsing surfaces (cart page) that only want the local subtotal
+   * estimate.
    */
   withTotals?: boolean
+  /**
+   * Server-truth shipping rate (cents) from the live cart quote. `null`/omitted
+   * means no method is locked yet → the summary shows a "calculated at
+   * checkout" placeholder. Ignored when `withTotals` is false.
+   */
+  shipping?: number | null
+  /** Server-truth tax total (cents) from the live cart quote. */
+  tax?: number
 }
 
-export function CartSummary({ subtotal, withTotals = true }: CartSummaryProps) {
+export function CartSummary({
+  subtotal,
+  withTotals = true,
+  shipping: shippingProp = null,
+  tax: taxProp,
+}: CartSummaryProps) {
   const discount = useCartStore((s) => s.appliedDiscount)
   const discountTotal = useCartStore((s) => s.getDiscountTotal)()
-  const selectedShipping = useCartStore((s) => s.selectedShipping)
-  const taxTotal = useCartStore((s) => s.taxTotal)
 
-  // When shipping hasn't been calculated yet, fall back to the local
-  // free-shipping threshold estimate so the cart drawer still tells
-  // the buyer "you're $X away from free shipping" while browsing.
+  // Browsing surfaces (withTotals=false) show a local free-shipping-threshold
+  // estimate. Checkout (withTotals=true) binds to the live cart quote passed in
+  // as props — those are the server's numbers, so there's no client-side copy
+  // to drift. A null shipping means no method is locked yet.
   const fallbackShipping =
     subtotal >= siteConfig.freeShippingThreshold ? 0 : 599
-  const shipping = selectedShipping
-    ? selectedShipping.rateAmount
-    : withTotals
-      ? 0 // unknown until address is entered
-      : fallbackShipping
-  const showEstimate = withTotals && !selectedShipping
+  const shipping = withTotals ? shippingProp ?? 0 : fallbackShipping
+  const showEstimate = withTotals && shippingProp == null
 
-  const tax = withTotals ? taxTotal : Math.round(subtotal * siteConfig.taxRate)
+  const tax = withTotals ? taxProp ?? 0 : Math.round(subtotal * siteConfig.taxRate)
 
   const total = Math.max(0, subtotal - discountTotal + shipping + tax)
 
