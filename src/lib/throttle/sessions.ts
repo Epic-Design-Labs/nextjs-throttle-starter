@@ -33,6 +33,13 @@ export async function createCartBackedSession(
       applicationId,
       cartId: input.cartId,
       customerEmail: input.customerEmail,
+      // Payment-only <PaymentEmbed>: we collect the shipping address ourselves
+      // and write it to the cart, so tell the session NOT to collect it in the
+      // embed. Otherwise the session defaults to collectShipping:true and,
+      // since the payment-only embed never collects an address, `complete`
+      // 422s `address_required`. With collect:false, complete uses the cart's
+      // address. (Verified end-to-end against the live checkout complete API.)
+      collect: { shippingAddress: false, billingAddress: false },
       returnUrl: input.returnUrl,
       cancelUrl: input.cancelUrl,
       allowedMethods: input.allowedMethods,

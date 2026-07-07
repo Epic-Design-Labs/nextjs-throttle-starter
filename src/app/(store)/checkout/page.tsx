@@ -164,12 +164,14 @@ export default function CheckoutPage() {
       form.country.trim().length >= 2
     if (!hasMin) return
 
+    // Only the fields that affect the shipping/tax rate go into the calc — the
+    // buyer's name and apartment line don't change rates, so including them
+    // would re-fire this slow round-trip every keystroke in those fields (and
+    // keep the method radios disabled). The full address, name included, is
+    // written to the cart at session creation.
     const body = JSON.stringify({
       shippingAddress: {
-        firstName: form.firstName || undefined,
-        lastName: form.lastName || undefined,
         addressLine1: form.line1,
-        addressLine2: form.line2 || undefined,
         city: form.city,
         stateProvince: form.state || undefined,
         postalCode: form.postalCode,
@@ -243,13 +245,10 @@ export default function CheckoutPage() {
   }, [
     throttleCartId,
     form.line1,
-    form.line2,
     form.city,
     form.state,
     form.postalCode,
     form.country,
-    form.firstName,
-    form.lastName,
     recreateCart,
   ])
 
@@ -556,10 +555,13 @@ export default function CheckoutPage() {
                 </p>
               )}
               {quote && quote.methods.length > 0 && (
-                <fieldset
-                  className="space-y-2"
-                  disabled={methodLocking || calcing}
-                >
+                // Only block interaction during the method-lock round-trip.
+                // A background rate refresh (`calcing`) must NOT disable the
+                // radios — the options are already visible, and disabling them
+                // for the multi-second recalc is what made the section feel
+                // frozen. If a refresh changes the chosen method's rate, the
+                // reconcile in the calc effect drops the stale selection.
+                <fieldset className="space-y-2" disabled={methodLocking}>
                   {calcing && (
                     <p className="flex items-center gap-2 text-xs text-muted-foreground">
                       <Loader2 className="h-3 w-3 animate-spin" aria-hidden="true" />
