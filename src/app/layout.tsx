@@ -74,5 +74,14 @@ export default async function RootLayout({
   // Only mount ClerkProvider when Clerk is configured. Without keys
   // the provider would still mount but render auth components in a
   // permanent loading state — confusing for offline / starter-preview.
-  return isClerkConfigured ? <ClerkProvider>{body}</ClerkProvider> : body
+  // Clerk's <SignIn /> heading defaults to "Sign in to {applicationName}"
+  // (the Clerk Dashboard app name). Override the localization string so it
+  // reads a plain "Sign In" instead.
+  return isClerkConfigured ? (
+    <ClerkProvider
+      localization={{ signIn: { start: { title: "Sign In" } } }}
+    >
+      {body}
+    </ClerkProvider>
+  ) : body
 }

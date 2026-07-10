@@ -3,6 +3,7 @@ import "server-only"
 import type {
   AddLineItemInput,
   Cart as SdkCart,
+  CartAddress,
   LineItem as SdkLineItem,
   Order as SdkOrder,
 } from "@usethrottle/cart"
@@ -83,6 +84,32 @@ function sdkOrderToThrottleOrder(o: SdkOrder): ThrottleOrder {
   }
 }
 
+/**
+ * Map the starter's ThrottleAddress (line1/state/country) onto Throttle's
+ * canonical `CartAddress` (addressLine1/stateProvince/countryCode). As of
+ * @usethrottle/cart 3.6 `UpdateCartInput.shippingAddress` is typed as
+ * `CartAddress` (no longer a loose record) and the API validates required
+ * fields at write time — so a field-name mismatch is now caught here at
+ * compile time and, failing that, rejected on write rather than surfacing as a
+ * 422 `address_required` at `complete`. Required fields fall back to "" so an
+ * incomplete address trips that write-time validation instead of silently
+ * persisting a partial one.
+ */
+function toCartAddressPayload(addr: ThrottleAddress): CartAddress {
+  return {
+    firstName: addr.firstName,
+    lastName: addr.lastName,
+    addressLine1: addr.line1 ?? "",
+    addressLine2: addr.line2,
+    city: addr.city ?? "",
+    stateProvince: addr.state,
+    postalCode: addr.postalCode,
+    countryCode: (addr.country ?? "").toUpperCase(),
+    phone: addr.phone,
+    email: addr.email,
+  }
+}
+
 export interface CreateCartInput {
   externalId?: string
   customerEmail?: string
@@ -110,13 +137,33 @@ export async function createCart(input: CreateCartInput = {}): Promise<ThrottleC
   if (input.shippingAddress || input.billingAddress) {
     const patched = await callThrottle(() =>
       getCartClient().carts.update(sdk.id, {
-        shippingAddress: input.shippingAddress as Record<string, unknown> | undefined,
-        billingAddress: input.billingAddress as Record<string, unknown> | undefined,
+        shippingAddress: input.shippingAddress
+          ? toCartAddressPayload(input.shippingAddress)
+          : undefined,
+        billingAddress: input.billingAddress
+          ? toCartAddressPayload(input.billingAddress)
+          : undefined,
       })
     )
     return sdkCartToThrottleCart(patched)
   }
   return sdkCartToThrottleCart(sdk)
+}
+
+/**
+ * Set the shipping address on an existing cart (e.g. the open cart the buyer
+ * built up via add-to-cart) so a cart-backed order carries the right
+ * destination. The buyer's email rides on the checkout session instead.
+ */
+export async function setCartShippingAddress(
+  cartId: string,
+  shippingAddress: ThrottleAddress
+): Promise<void> {
+  await callThrottle(() =>
+    getCartClient().carts.update(cartId, {
+      shippingAddress: toCartAddressPayload(shippingAddress),
+    })
+  )
 }
 
 export interface AddCartItemInput {
@@ -181,6 +228,19 @@ export async function checkoutCart(cartId: string): Promise<ThrottleOrder> {
 export async function getCart(cartId: string): Promise<ThrottleCart> {
   const sdk = await callThrottle(() => getCartClient().carts.get(cartId))
   return sdkCartToThrottleCart(sdk)
+}
+
+/**
+ * The cart's line items, mapped to our domain shape. Used to hydrate an
+ * order's display when the order record keeps its items on the cart rather
+ * than snapshotting them onto `order.lineItems`.
+ */
+export async function getCartLineItems(
+  cartId: string
+): Promise<ThrottleLineItem[]> {
+  const sdk = await callThrottle(() => getCartClient().carts.get(cartId))
+  const items = (sdk as { lineItems?: SdkLineItem[] }).lineItems ?? []
+  return items.map(sdkLineItemToThrottle)
 }
 
 export interface AppliedDiscount {

@@ -81,9 +81,10 @@ export async function listSubscriptions(
 ): Promise<{ subscriptions: ThrottleSubscription[]; nextCursor: string | null }> {
   configureApiClient()
   try {
-    // api-client positional args:
-    //   (cursor, limit, customerId, externalCustomerId, status, interval, q)
+    // api-client v2 positional args:
+    //   (xThrottleEnvironmentId, cursor, limit, customerId, externalCustomerId, status, interval, q)
     const result = (await SubscriptionsService.getApiV1Subscriptions(
+      undefined, // xThrottleEnvironmentId — key already scopes the env
       input.cursor,
       input.limit ?? 25,
       input.customerId

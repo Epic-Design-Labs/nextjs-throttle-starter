@@ -30,3 +30,29 @@ export function requireUuid(
   }
   return value
 }
+
+/**
+ * Reject cross-site calls to a state-changing endpoint (lightweight CSRF
+ * guard). Browsers attach an `Origin` header to cross-origin requests and to
+ * same-origin POSTs, so a present Origin whose host differs from the request
+ * host is cross-site. A missing Origin (same-origin navigation, server-to-
+ * server) is allowed through. Returns a 403 to reject, or null to proceed.
+ */
+export function assertSameOrigin(req: Request): NextResponse | null {
+  const origin = req.headers.get("origin")
+  if (!origin) return null
+  const host = req.headers.get("host")
+  let originHost = ""
+  try {
+    originHost = new URL(origin).host
+  } catch {
+    originHost = ""
+  }
+  if (!host || originHost !== host) {
+    return NextResponse.json(
+      { error: { code: "forbidden", message: "Cross-origin request rejected." } },
+      { status: 403 }
+    )
+  }
+  return null
+}

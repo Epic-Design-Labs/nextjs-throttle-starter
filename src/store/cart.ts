@@ -12,13 +12,6 @@ export interface AppliedDiscountState {
   freeShipping: boolean
 }
 
-export interface SelectedShippingState {
-  methodId: string
-  displayName: string
-  rateAmount: number
-  currency: string
-}
-
 interface CartState {
   /** Local-only id used to seed Throttle's externalId on cart creation. */
   externalId: string
@@ -28,9 +21,6 @@ interface CartState {
   /** Local variantId → Throttle line-item id. Populated when adds settle. */
   throttleItemIds: Record<string, string>
   appliedDiscount: AppliedDiscountState | null
-  selectedShipping: SelectedShippingState | null
-  /** Throttle-computed tax total (cents). Set after shipping/tax calc. */
-  taxTotal: number
   isOpen: boolean
   /** Surface-level sync state, useful for "saving…" UI. */
   syncing: boolean
@@ -49,13 +39,19 @@ interface CartState {
   removeItem: (variantId: string) => void
   updateQuantity: (variantId: string, quantity: number) => void
   clearCart: () => void
+  /**
+   * Rebuild the server-side Throttle cart from the current local items.
+   * Used to recover when the persisted cart is no longer modifiable
+   * (e.g. it was converted to an order by a prior checkout). Returns the
+   * new Throttle cart id.
+   */
+  recreateCart: () => Promise<string>
   toggleCart: () => void
   openCart: () => void
   closeCart: () => void
 
   applyDiscountCode: (code: string) => Promise<void>
   removeDiscountCode: () => Promise<void>
-  setShipping: (shipping: SelectedShippingState | null, taxTotal?: number) => void
 
   getSubtotal: () => number
   getItemCount: () => number
@@ -71,6 +67,26 @@ function enqueueSync<T>(task: () => Promise<T>): Promise<T> {
   // Keep the queue alive even if a task throws.
   syncQueue = next.catch(() => undefined)
   return next
+}
+
+/**
+ * A persisted throttleCartId can become unusable in two ways:
+ *   • 409 `cart_not_open` — the cart was converted to an order (e.g. a prior
+ *     checkout that converted it but never ran clearCart()).
+ *   • 404 — the cart no longer exists for the active store (e.g. after the
+ *     Throttle API key was switched to a different environment, orphaning a
+ *     cart that lived in the old one).
+ * Both are recovered the same way: rebuild a fresh cart from local items.
+ */
+function isCartUnusableError(
+  status: number,
+  payload: { error?: { code?: string } } | null
+): boolean {
+  return (
+    status === 404 ||
+    status === 409 ||
+    payload?.error?.code === "cart_not_open"
+  )
 }
 
 async function ensureCartId(get: () => CartState, set: SetState): Promise<string> {
@@ -118,8 +134,15 @@ async function syncAdd(
   })
   if (!res.ok) {
     const errPayload = (await res.json().catch(() => null)) as
-      | { error?: { message?: string } }
+      | { error?: { code?: string; message?: string } }
       | null
+    // Adding to a converted/closed cart: rebuild a fresh cart from the
+    // local items (which already include this one) and stop — the rebuild
+    // re-adds everything itself (it doesn't call syncAdd, so no recursion).
+    if (isCartUnusableError(res.status, errPayload)) {
+      await get().recreateCart()
+      return
+    }
     throw new Error(errPayload?.error?.message ?? "Failed to add item.")
   }
   const { item } = (await res.json()) as { item: { id: string } }
@@ -207,8 +230,6 @@ export const useCartStore = create<CartState>()(
       items: [],
       throttleItemIds: {},
       appliedDiscount: null,
-      selectedShipping: null,
-      taxTotal: 0,
       isOpen: false,
       syncing: false,
       syncError: null,
@@ -278,11 +299,52 @@ export const useCartStore = create<CartState>()(
           throttleCartId: null,
           throttleItemIds: {},
           appliedDiscount: null,
-          selectedShipping: null,
-          taxTotal: 0,
           externalId: makeExternalId(),
           syncError: null,
         })
+      },
+
+      recreateCart: async () => {
+        // Build the replacement cart FULLY (create + re-add every item)
+        // before swapping it into the store. Exposing the new throttleCartId
+        // while the cart is still empty would let the checkout effect fire a
+        // shipping calc against an empty cart and get back no methods. Mint a
+        // fresh externalId too — reusing the old one risks Throttle handing
+        // back the same converted cart.
+        const items = get().items
+        const externalId = makeExternalId()
+        const createRes = await fetch("/api/throttle/cart", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ externalId }),
+        })
+        if (!createRes.ok) throw new Error("Failed to recreate cart.")
+        const { cart } = (await createRes.json()) as { cart: { id: string } }
+        const throttleItemIds: Record<string, string> = {}
+        for (const item of items) {
+          const r = await fetch(`/api/throttle/cart/${cart.id}/items`, {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({
+              variantId: item.variantId,
+              quantity: item.quantity,
+            }),
+          })
+          if (r.ok) {
+            const { item: li } = (await r.json()) as { item: { id: string } }
+            throttleItemIds[item.variantId] = li.id
+          }
+        }
+        // One atomic swap: the checkout effect re-runs exactly once, now
+        // against a fully populated cart.
+        set({
+          throttleCartId: cart.id,
+          throttleItemIds,
+          externalId,
+          appliedDiscount: null,
+          syncError: null,
+        })
+        return cart.id
       },
 
       applyDiscountCode: async (code) => {
@@ -326,12 +388,6 @@ export const useCartStore = create<CartState>()(
         set({ appliedDiscount: null })
       },
 
-      setShipping: (shipping, taxTotal) =>
-        set({
-          selectedShipping: shipping,
-          ...(taxTotal !== undefined ? { taxTotal } : {}),
-        }),
-
       toggleCart: () => set((state) => ({ isOpen: !state.isOpen })),
       openCart: () => set({ isOpen: true }),
       closeCart: () => set({ isOpen: false }),
@@ -358,8 +414,6 @@ export const useCartStore = create<CartState>()(
         items: state.items,
         throttleItemIds: state.throttleItemIds,
         appliedDiscount: state.appliedDiscount,
-        selectedShipping: state.selectedShipping,
-        taxTotal: state.taxTotal,
       }),
     }
   )

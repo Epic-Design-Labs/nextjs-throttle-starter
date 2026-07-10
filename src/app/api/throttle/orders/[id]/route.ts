@@ -1,5 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server"
-import { ThrottleApiError, getOrder } from "@/lib/throttle"
+import { ThrottleApiError, getOrderConfirmation } from "@/lib/throttle"
 import { env } from "@/lib/env"
 import { authProvider, isClerkConfigured } from "@/lib/auth"
 import { requireUuid } from "@/lib/http/validate"
@@ -41,7 +41,9 @@ export async function GET(
   if (id instanceof NextResponse) return id
 
   try {
-    const order = await getOrder(id)
+    // getOrderConfirmation hydrates lineItems from the backing cart when the
+    // (cart-backed) order record doesn't embed them itself.
+    const order = await getOrderConfirmation(id)
     // Ownership check — never return an order whose customer doesn't
     // match the authenticated user. Falls back to the externalId
     // metadata when the live record lacks a customerId (older orders).

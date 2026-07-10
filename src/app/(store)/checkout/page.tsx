@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useRef } from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
@@ -13,6 +13,7 @@ import { CartSummary } from "@/components/cart/cart-summary"
 import { DiscountInput } from "@/components/cart/discount-input"
 import { ThrottlePaymentEmbed } from "@/components/checkout/throttle-payment-embed"
 import { formatPrice } from "@/lib/utils"
+import { Loader2 } from "lucide-react"
 import { toast } from "sonner"
 import type { CheckoutSession } from "@/types"
 
@@ -68,7 +69,18 @@ export default function CheckoutPage() {
   const throttleCartId = useCartStore((s) => s.throttleCartId)
   const getSubtotal = useCartStore((s) => s.getSubtotal)
   const clearCart = useCartStore((s) => s.clearCart)
-  const setShipping = useCartStore((s) => s.setShipping)
+  const recreateCart = useCartStore((s) => s.recreateCart)
+  // The buyer's locked shipping choice — ephemeral checkout state, NOT the
+  // persisted cart store. Totals come live from the cart quote (P4); we only
+  // track which method was picked this visit, so it resets on reload/navigation
+  // instead of drifting into the next cart.
+  const [lockedMethod, setLockedMethod] = useState<ShippingMethodOption | null>(
+    null
+  )
+  // Rebuild the cart at most once per checkout visit. A once-guard (rather
+  // than per-id) keeps a contention 409 on the freshly-rebuilt cart from
+  // cascading into an endless recover→rebuild loop.
+  const hasRecoveredRef = useRef(false)
   const [mounted, setMounted] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [form, setForm] = useState<ShippingForm>(EMPTY_FORM)
@@ -152,54 +164,92 @@ export default function CheckoutPage() {
       form.country.trim().length >= 2
     if (!hasMin) return
 
-    const handle = setTimeout(() => {
-      setCalcing(true)
-      fetch(`/api/throttle/cart/${throttleCartId}/shipping-tax`, {
+    // Only the fields that affect the shipping/tax rate go into the calc — the
+    // buyer's name and apartment line don't change rates, so including them
+    // would re-fire this slow round-trip every keystroke in those fields (and
+    // keep the method radios disabled). The full address, name included, is
+    // written to the cart at session creation.
+    const body = JSON.stringify({
+      shippingAddress: {
+        addressLine1: form.line1,
+        city: form.city,
+        stateProvince: form.state || undefined,
+        postalCode: form.postalCode,
+        countryCode: form.country.toUpperCase(),
+      },
+    })
+    const calc = (cartId: string) =>
+      fetch(`/api/throttle/cart/${cartId}/shipping-tax`, {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          shippingAddress: {
-            firstName: form.firstName || undefined,
-            lastName: form.lastName || undefined,
-            addressLine1: form.line1,
-            addressLine2: form.line2 || undefined,
-            city: form.city,
-            stateProvince: form.state || undefined,
-            postalCode: form.postalCode,
-            countryCode: form.country.toUpperCase(),
-          },
-        }),
+        body,
       })
-        .then(async (res) => {
-          if (!res.ok) {
-            // Don't surface backend wobble as a toast — checkout UX
-            // should keep showing the previous quote and let the buyer
-            // proceed. Log for debug.
-            const payload = await res.json().catch(() => null)
-            console.warn("[checkout] shipping-tax calc failed:", payload)
-            return null
+
+    // The debounce (clearTimeout below) already coalesces keystrokes, so by
+    // the time this fires we run the calc to completion — including the
+    // rebuild+retry. We deliberately don't abort mid-flight on a dep change:
+    // recreateCart() swaps throttleCartId, which would itself trip an abort
+    // flag and cancel the very retry we need. A late result is corrected by
+    // the next debounced calc.
+    const handle = setTimeout(async () => {
+      setCalcing(true)
+      try {
+        let res = await calc(throttleCartId)
+        if (!res.ok) {
+          const payload = (await res.json().catch(() => null)) as
+            | { error?: { code?: string } }
+            | null
+          // An unusable cart — converted to an order (409 cart_not_open) or
+          // missing for the active store (404, e.g. orphaned by an API env
+          // switch) — can't be recalculated. Rebuild a fresh cart from the
+          // local items and retry the calc inline against the new id (don't
+          // wait for the throttleCartId change to re-run the effect — that
+          // debounced re-run fires unreliably). Rebuild a given dead cart
+          // at most once.
+          const deadCart =
+            res.status === 404 ||
+            res.status === 409 ||
+            payload?.error?.code === "cart_not_open"
+          if (deadCart && !hasRecoveredRef.current) {
+            hasRecoveredRef.current = true
+            const newCartId = await recreateCart()
+            res = await calc(newCartId)
           }
-          return (await res.json()) as { quote: ShippingTaxQuote }
+        }
+        if (!res.ok) {
+          // Don't surface backend wobble as a toast — keep the prior quote
+          // and let the buyer proceed. Log for debug.
+          console.warn("[checkout] shipping-tax calc failed:", res.status)
+          return
+        }
+        const { quote } = (await res.json()) as { quote: ShippingTaxQuote }
+        setQuote(quote)
+        // Reconcile the buyer's locked choice against the fresh quote. Keep it
+        // only if the same method is still offered at the same rate — a changed
+        // destination can drop a method or move its price, so otherwise we drop
+        // it and the buyer re-picks (re-locking a current rate). Functional
+        // update so this effect needn't depend on lockedMethod. We never
+        // auto-select: Continue stays disabled until the buyer chooses.
+        setLockedMethod((prev) => {
+          if (!prev) return null
+          const m = quote.methods.find((x) => x.id === prev.id)
+          return m && m.amount === prev.amount ? prev : null
         })
-        .then((payload) => {
-          if (!payload) return
-          setQuote(payload.quote)
-          setShipping(null, payload.quote.taxTotal)
-        })
-        .finally(() => setCalcing(false))
+      } catch (err) {
+        console.warn("[checkout] shipping-tax calc failed:", err)
+      } finally {
+        setCalcing(false)
+      }
     }, 500)
     return () => clearTimeout(handle)
   }, [
     throttleCartId,
     form.line1,
-    form.line2,
     form.city,
     form.state,
     form.postalCode,
     form.country,
-    form.firstName,
-    form.lastName,
-    setShipping,
+    recreateCart,
   ])
 
   async function handleSelectMethod(method: ShippingMethodOption) {
@@ -227,15 +277,9 @@ export default function CheckoutPage() {
       }
       const { quote: next } = (await res.json()) as { quote: ShippingTaxQuote }
       setQuote(next)
-      setShipping(
-        {
-          methodId: method.id,
-          displayName: method.label,
-          rateAmount: method.amount,
-          currency: method.currency,
-        },
-        next.taxTotal
-      )
+      // Lock the choice in ephemeral checkout state (totals come live from the
+      // cart quote). Prefer the canonical method from the server response.
+      setLockedMethod(next.methods.find((m) => m.id === method.id) ?? method)
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Selection failed.")
     } finally {
@@ -269,6 +313,21 @@ export default function CheckoutPage() {
 
   const subtotal = getSubtotal()
 
+  // A locked shipping method is required before payment whenever the store
+  // actually offers one. If the destination has no methods (store doesn't
+  // ship there / rates are computed at fulfillment) `quote.unavailable` is
+  // true and we don't block. Before a shippable address is entered there's
+  // nothing to pick yet, so the address validation in handleSubmit gates
+  // instead. While the quote is still loading, `quote` is null and shipping
+  // is treated as unresolved, which keeps the button disabled through the
+  // calc rather than letting a click race ahead of a locked rate.
+  const hasShippableAddress =
+    form.line1.trim().length > 0 &&
+    form.city.trim().length > 0 &&
+    form.postalCode.trim().length > 0
+  const shippingResolved = !!lockedMethod || (quote?.unavailable ?? false)
+  const needsShippingChoice = hasShippableAddress && !shippingResolved
+
   function handleChange(e: React.ChangeEvent<HTMLInputElement>) {
     setForm((f) => ({ ...f, [e.target.name]: e.target.value }))
   }
@@ -285,6 +344,14 @@ export default function CheckoutPage() {
       !form.postalCode
     ) {
       toast.error("Please fill in all required fields")
+      return
+    }
+
+    // Shipping must be locked (when the destination offers methods) so the
+    // cart-backed order carries the right rate. The submit button is disabled
+    // in this state, but guard here too for keyboard (Enter) submits.
+    if (!lockedMethod && !quote?.unavailable) {
+      toast.error("Please select a shipping method")
       return
     }
 
@@ -338,7 +405,7 @@ export default function CheckoutPage() {
       <div className="mx-auto max-w-3xl px-4 py-8 sm:px-6 lg:px-8">
         <h1 className="text-3xl font-bold tracking-tight">Checkout</h1>
         <p className="mt-2 text-sm text-muted-foreground">
-          Order {session.metadata?.orderNumber ?? session.orderId}
+          Enter your payment details to complete your order.
         </p>
 
         <Card className="mt-8">
@@ -356,6 +423,14 @@ export default function CheckoutPage() {
               }}
               onFailed={({ message }) => toast.error(message)}
               onCanceled={() => {
+                // Release the abandoned session server-side (P5). Fire-and-
+                // forget — the buyer is already back on the form, and the
+                // route treats an already-completed session as a no-op.
+                void fetch("/api/throttle/checkout-session/cancel", {
+                  method: "POST",
+                  headers: { "content-type": "application/json" },
+                  body: JSON.stringify({ sessionId: session.id }),
+                }).catch(() => {})
                 setSession(null)
                 toast.info("Payment cancelled.")
               }}
@@ -451,9 +526,26 @@ export default function CheckoutPage() {
                 </p>
               )}
               {calcing && !quote && (
-                <p className="text-sm text-muted-foreground">
-                  Calculating shipping + tax…
-                </p>
+                <div className="space-y-2" aria-busy="true" aria-live="polite">
+                  <p className="flex items-center gap-2 text-sm text-muted-foreground">
+                    <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+                    Calculating shipping &amp; tax…
+                  </p>
+                  {/* Skeleton rows keep the panel from collapsing during the
+                      shipping/tax round-trip and signal that options are
+                      loading. */}
+                  <div className="space-y-2" aria-hidden="true">
+                    {[0, 1].map((i) => (
+                      <div
+                        key={i}
+                        className="flex items-center justify-between rounded-md border border-border p-3"
+                      >
+                        <div className="h-4 w-40 animate-pulse rounded bg-muted" />
+                        <div className="h-4 w-12 animate-pulse rounded bg-muted" />
+                      </div>
+                    ))}
+                  </div>
+                </div>
               )}
               {quote && quote.unavailable && (
                 <p className="text-sm text-muted-foreground">
@@ -463,9 +555,21 @@ export default function CheckoutPage() {
                 </p>
               )}
               {quote && quote.methods.length > 0 && (
+                // Only block interaction during the method-lock round-trip.
+                // A background rate refresh (`calcing`) must NOT disable the
+                // radios — the options are already visible, and disabling them
+                // for the multi-second recalc is what made the section feel
+                // frozen. If a refresh changes the chosen method's rate, the
+                // reconcile in the calc effect drops the stale selection.
                 <fieldset className="space-y-2" disabled={methodLocking}>
+                  {calcing && (
+                    <p className="flex items-center gap-2 text-xs text-muted-foreground">
+                      <Loader2 className="h-3 w-3 animate-spin" aria-hidden="true" />
+                      Updating rates for your address…
+                    </p>
+                  )}
                   {quote.methods.map((m) => {
-                    const selected = quote.selectedMethodId === m.id
+                    const selected = lockedMethod?.id === m.id
                     return (
                       <label
                         key={m.id}
@@ -533,10 +637,24 @@ export default function CheckoutPage() {
               ))}
               <Separator />
               <DiscountInput />
-              <CartSummary subtotal={subtotal} />
-              <Button type="submit" size="lg" className="w-full" disabled={submitting}>
+              <CartSummary
+                subtotal={subtotal}
+                shipping={lockedMethod ? lockedMethod.amount : null}
+                tax={quote?.taxTotal ?? 0}
+              />
+              <Button
+                type="submit"
+                size="lg"
+                className="w-full"
+                disabled={submitting || needsShippingChoice}
+              >
                 {submitting ? "Creating session..." : "Continue to Payment"}
               </Button>
+              {needsShippingChoice && (
+                <p className="text-center text-xs text-muted-foreground">
+                  Select a shipping method to continue.
+                </p>
+              )}
             </CardContent>
           </Card>
         </div>

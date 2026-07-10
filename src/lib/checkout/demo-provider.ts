@@ -25,6 +25,10 @@ export const demoCheckoutProvider: CheckoutProvider = {
     }
   },
 
+  async cancelSession(_sessionId: string): Promise<void> {
+    // No server-side session in demo mode — nothing to cancel.
+  },
+
   async getSession(sessionId: string): Promise<CheckoutSession> {
     // In demo mode, all sessions are "complete" once retrieved
     return {
