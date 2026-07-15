@@ -5,11 +5,10 @@ import type {
   Cart as SdkCart,
   CartAddress,
   LineItem as SdkLineItem,
-  Order as SdkOrder,
 } from "@usethrottle/cart"
 import { callThrottle } from "./client"
 import { getCartClient, requireStoreId } from "./clients"
-import type { ThrottleAddress, ThrottleCart, ThrottleLineItem, ThrottleOrder } from "./types"
+import type { ThrottleAddress, ThrottleCart, ThrottleLineItem } from "./types"
 
 // Adapters between the SDK's shapes and the starter's existing types.
 // Keeping a thin translation layer lets the public surface of this module
@@ -51,36 +50,6 @@ function sdkLineItemToThrottle(li: SdkLineItem): ThrottleLineItem {
     imageUrl: li.imageUrl,
     position: li.position,
     metadata: li.metadata,
-  }
-}
-
-function sdkOrderToThrottleOrder(o: SdkOrder): ThrottleOrder {
-  // cart-sdk's `Order` is intentionally thin (id/status/total/currency).
-  // We hydrate the missing fields with zero/null sentinels so downstream
-  // code can keep its existing shape; callers that need the full order
-  // (e.g. success page) should re-fetch via getOrder() from sessions.ts
-  // which uses the richer checkout-sdk shape.
-  return {
-    id: o.id,
-    cartId: null,
-    customerId: null,
-    orderNumber: "",
-    status: o.status as ThrottleOrder["status"],
-    paymentStatus: "pending",
-    fulfillmentStatus: "unfulfilled",
-    currency: o.currency,
-    subtotal: 0,
-    taxTotal: 0,
-    discountTotal: 0,
-    shippingTotal: 0,
-    total: o.total,
-    shippingAddress: null,
-    billingAddress: null,
-    metadata: {},
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-    completedAt: null,
-    cancelledAt: null,
   }
 }
 
@@ -218,11 +187,6 @@ export async function updateCartItem(
 
 export function removeCartItem(cartId: string, itemId: string): Promise<void> {
   return callThrottle(() => getCartClient().items.remove(cartId, itemId))
-}
-
-export async function checkoutCart(cartId: string): Promise<ThrottleOrder> {
-  const order = await callThrottle(() => getCartClient().carts.checkout(cartId))
-  return sdkOrderToThrottleOrder(order)
 }
 
 export async function getCart(cartId: string): Promise<ThrottleCart> {

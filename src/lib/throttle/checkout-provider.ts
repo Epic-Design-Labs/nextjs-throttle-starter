@@ -13,7 +13,6 @@ import {
   setCartShippingAddress,
 } from "./cart"
 import { cancelCheckoutSession, createCartBackedSession } from "./sessions"
-import { getOrder } from "./orders"
 import {
   THROTTLE_SIGNATURE_HEADER,
   verifyThrottleSignature,
@@ -157,28 +156,6 @@ export const throttleCheckoutProvider: CheckoutProvider = {
 
   async cancelSession(sessionId: string): Promise<void> {
     await cancelCheckoutSession(sessionId)
-  },
-
-  async getSession(sessionId: string): Promise<CheckoutSession> {
-    // For payment-embed sessions, the merchant-facing source of truth is
-    // the underlying order. Treat `sessionId` as the order id (which is
-    // what createSession returns into the session.orderId field, and
-    // also stamps as the session metadata).
-    const order = await getOrder(sessionId)
-    const status: CheckoutSession["status"] =
-      order.status === "completed" ? "complete" : order.status === "cancelled" ? "expired" : "open"
-    return {
-      id: order.id,
-      url: `${env.NEXT_PUBLIC_THROTTLE_CHECKOUT_URL}/orders/${order.id}`,
-      status,
-      orderId: order.id,
-      metadata: {
-        orderNumber: order.orderNumber,
-        paymentStatus: order.paymentStatus,
-        total: String(order.total),
-        currency: order.currency,
-      },
-    }
   },
 
   async handleWebhook(

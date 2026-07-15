@@ -29,16 +29,6 @@ export const demoCheckoutProvider: CheckoutProvider = {
     // No server-side session in demo mode — nothing to cancel.
   },
 
-  async getSession(sessionId: string): Promise<CheckoutSession> {
-    // In demo mode, all sessions are "complete" once retrieved
-    return {
-      id: sessionId,
-      url: `/checkout/success?session_id=${sessionId}`,
-      status: "complete",
-      orderId: `ORD-${sessionId.slice(-6).toUpperCase()}`,
-    }
-  },
-
   async handleWebhook(
     _payload: unknown,
     _signature: string

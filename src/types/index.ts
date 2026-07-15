@@ -336,7 +336,6 @@ export interface CheckoutProvider {
       cancelUrl?: string
     }
   ): Promise<CheckoutSession>
-  getSession(sessionId: string): Promise<CheckoutSession>
   /**
    * Cancel/release an open checkout session when the buyer abandons payment,
    * so the attempt is cleaned up engine-side. Idempotent; a no-op for engines

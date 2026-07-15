@@ -5,10 +5,11 @@ import { ThrottleApiError } from "@/lib/throttle"
 import { assertSameOrigin } from "@/lib/http/validate"
 
 const BodySchema = z.object({
-  // Throttle session ids are `cs_`/`sess_` + an opaque token. Restrict the
-  // charset so an unvalidated id can't smuggle path segments into the SDK's
-  // URL template (same rationale as requireUuid for UUID route params).
-  sessionId: z.string().regex(/^[A-Za-z0-9_]{8,128}$/, "Invalid sessionId."),
+  // Throttle session ids are opaque tokens (`cs_`/`sess_`-prefixed or plain
+  // UUIDs, so hyphens are allowed). Restrict the charset so an unvalidated
+  // id can't smuggle path segments into the SDK's URL template (same
+  // rationale as requireUuid for UUID route params).
+  sessionId: z.string().regex(/^[A-Za-z0-9_-]{8,128}$/, "Invalid sessionId."),
 })
 
 /**
