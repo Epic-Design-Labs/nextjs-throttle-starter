@@ -25,7 +25,7 @@ Built by [Epic Design Labs](https://epicdesignlabs.com)
 - **Accessibility** — Skip-to-content, focus traps, ARIA labels, keyboard navigation, 44px touch targets
 - **i18n** — next-intl with English and Spanish translations
 - **Responsive** — Mobile-first design, 1440px max-width, full-width cart/menu on mobile
-- **Security** — server-side pricing (no IDOR), UUID validation at every dynamic route boundary (no SSRF), HMAC-SHA256 verification on both Throttle and Clerk webhooks, CSP/HSTS/X-Frame-Options via composed middleware
+- **Security** — server-side pricing (no IDOR), UUID validation at every dynamic route boundary (no SSRF), HMAC-SHA256 verification on both Throttle and Clerk webhooks, CSP/HSTS/X-Frame-Options via a composed proxy (Next 16 `proxy.ts`)
 
 ## Tech Stack
 
@@ -160,7 +160,7 @@ src/
   types/                      # TypeScript types
   i18n/                       # next-intl config
   hooks/                      # useAuthGuard, useCurrentUser
-  middleware.ts               # Clerk + security headers
+  proxy.ts                    # Clerk + security headers (Next 16; was middleware.ts)
 messages/
   en.json, es.json            # next-intl translations
 docs/
@@ -291,7 +291,7 @@ The starter ships with a Clerk integration so the order-read routes can identify
 | `src/lib/auth/demo-provider.ts` | Stub returned when Clerk isn't configured. `getCurrentUser()` is always `null`. |
 | `src/lib/auth/index.ts` | Picks the active provider based on env. |
 | `src/lib/throttle/customers.ts` | `createCustomer`, `getCustomer`, `getCustomerByExternalId`. |
-| `src/middleware.ts` | Composes `clerkMiddleware()` with the existing security headers; protects `/account/*` and `/api/throttle/orders/*`. |
+| `src/proxy.ts` | Composes `clerkMiddleware()` with the existing security headers; protects `/account/*` and `/api/throttle/orders/*`. (Next 16 renamed the `middleware` convention to `proxy`.) |
 | `src/app/(store)/auth/{login,register}/[[...rest]]/page.tsx` | Catch-all routes that render Clerk's `<SignIn />` / `<SignUp />`. Demo form is the fallback when Clerk env is absent. |
 | `src/hooks/use-auth-guard.ts` / `src/hooks/use-current-user.ts` | Client-side hooks. Pick between Clerk + Zustand impls at module load so React's hook rules stay satisfied. |
 
@@ -353,7 +353,7 @@ For local dev, expose your dev server with a tunnel (ngrok, cloudflared, etc.) a
 | **No IDOR on order routes.** Buyers can't enumerate or read other buyers' orders. | `/api/throttle/orders*` reads the customer id from the Clerk session and rejects any request without one. The `[id]` route additionally compares `order.customerId` to the session before returning. |
 | **No SSRF via path traversal.** Dynamic route params can't redirect upstream fetches. | `requireUuid()` at every dynamic-route boundary rejects non-UUID segments with `400 invalid_id` before any id reaches the SDK. |
 | **Webhooks verified.** Both Throttle and Clerk webhooks are HMAC/svix-verified before any handler runs. | `src/lib/throttle/webhook.ts` (HMAC-SHA256 + timestamp tolerance) and `verifyWebhook` from `@clerk/nextjs/webhooks`. |
-| **CSP locked down.** Inline frames + external script origins explicitly allow-listed. | `src/middleware.ts` composes `clerkMiddleware()` with strict CSP allowing only `clerk.com`, `clerk.accounts.dev`, `checkout.usethrottle.dev`. |
+| **CSP locked down.** Inline frames + external script origins explicitly allow-listed; no `'unsafe-eval'`. | `src/proxy.ts` composes `clerkMiddleware()` with a strict CSP allowing only `clerk.com`, `clerk.accounts.dev`, `checkout.usethrottle.dev`, plus per-connector fragments for the modules you enable. |
 
 ### Swapping the engine
 
@@ -387,9 +387,10 @@ interface CheckoutProvider {
 | `/account/settings` | Clerk's `<UserProfile />` — profile, password, 2FA, sessions |
 | `/auth/login` | Sign in |
 | `/about` | About the starter + Epic Design Labs |
-| `/contact` | Contact form |
+| `/contact` | Contact details (static — no form handler until the mailer module lands; see `docs/STARTER-IMPROVEMENTS.md` C5) |
 | `/faq` | FAQ accordion |
 | `/policies/*` | Shipping, returns, privacy, terms |
+| `/sitemap` | Human-readable sitemap (the XML for crawlers is at `/sitemap.xml`) |
 
 ## Need Help?
 
