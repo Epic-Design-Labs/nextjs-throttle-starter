@@ -2,7 +2,7 @@
 
 A free, open-source, production-ready ecommerce starter built with **Next.js**, **Tailwind CSS**, and **shadcn/ui**, pre-integrated with **[Throttle](https://usethrottle.dev)** as the commerce engine for carts, checkout sessions, payments, and orders.
 
-**[Throttle Docs](https://docs.usethrottle.dev)** · **[Live Demo](https://nextjsecommercestarter.com)** · **[Customization Guide](docs/CUSTOMIZATION.md)** · **[Report Issue](https://github.com/Epic-Design-Labs/nextjs-ecommerce-starter/issues)**
+**[Throttle Docs](https://docs.usethrottle.dev)** · **[Live Demo](https://nextjsecommercestarter.com)** · **[Customization Guide](docs/CUSTOMIZATION.md)** · **[Report Issue](https://github.com/Epic-Design-Labs/nextjs-throttle-starter/issues)**
 
 Built by [Epic Design Labs](https://epicdesignlabs.com)
 
@@ -11,13 +11,14 @@ Built by [Epic Design Labs](https://epicdesignlabs.com)
 - **Product Catalog** — Browse, filter, sort, search across 14 demo products in 5 categories
 - **Shopping Cart** — Slide-out drawer with optimistic UI, **synced to Throttle in real time** (cart materialises in Throttle on the first add and stays in sync through every quantity / remove)
 - **Wishlist** — Save products with heart icons, persisted to localStorage
-- **Checkout** — Throttle [`PaymentEmbed`](https://docs.usethrottle.dev/developers/embedded-checkout) iframe, **shipping form prefilled from the signed-in buyer's saved address**, server-side pricing (no client tampering)
+- **Checkout** — Throttle [`PaymentEmbed`](https://docs.usethrottle.dev/developers/embedded-checkout) iframe over a **cart-backed session**, **shipping form prefilled from the signed-in buyer's saved address**, live shipping + tax quoting, discount codes, server-side pricing (no client tampering)
 - **Authentication** — [Clerk](https://clerk.com) by default with a pluggable `AuthProvider` port; legacy mock auth as a fallback when Clerk env is absent
 - **Customer mirror** — Clerk users automatically upserted as Throttle customers (lazy on first server call, plus a `user.created` webhook for SSO / dashboard creations)
 - **Account** — Dashboard with recent order summary + default shipping address + active subscriptions, order history scoped to the buyer's Throttle `customerId`, addresses + payment methods **stored on the Throttle customer record**, Clerk-managed profile (email/password/2FA), reorder (whole or per-line-item)
 - **Brands** — Brand pages with product filtering
 - **Subcategories** — Nested categories with accordion mobile menu
 - **Search** — Cmd+K modal with instant results and popular searches
+- **Content** — Blog posts and CMS pages authored as markdown + frontmatter (`content/blog/*.md`, `content/pages/*.md`), rendered with GFM on or off per page
 - **Announcement Bar** — Dismissible top banner, configurable in one file
 - **Recently Viewed** — Tracks and displays recently browsed products
 - **Back to Top** — Smooth scroll button on long pages
@@ -25,7 +26,7 @@ Built by [Epic Design Labs](https://epicdesignlabs.com)
 - **Accessibility** — Skip-to-content, focus traps, ARIA labels, keyboard navigation, 44px touch targets
 - **i18n** — next-intl with English and Spanish translations
 - **Responsive** — Mobile-first design, 1440px max-width, full-width cart/menu on mobile
-- **Security** — server-side pricing (no IDOR), UUID validation at every dynamic route boundary (no SSRF), HMAC-SHA256 verification on both Throttle and Clerk webhooks, CSP/HSTS/X-Frame-Options via a composed proxy (Next 16 `proxy.ts`)
+- **Security** — server-side pricing (no client price tampering), UUID validation at every dynamic route boundary (no SSRF), HMAC-SHA256 verification on both Throttle and Clerk webhooks, CSP/HSTS/X-Frame-Options via a composed proxy (Next 16 `proxy.ts`)
 
 ## Tech Stack
 
@@ -39,13 +40,14 @@ Built by [Epic Design Labs](https://epicdesignlabs.com)
 - **next-intl** (internationalization)
 - **Sonner** (toast notifications)
 - **Inter** (Google Font via next/font)
+- **Vitest** (unit tests) + a Playwright-driven smoke script
 
 ## Quick Start
 
 ```bash
-# Requires Node.js 20+
-git clone https://github.com/Epic-Design-Labs/nextjs-ecommerce-starter.git
-cd nextjs-ecommerce-starter
+# Requires Node.js 22+ (see .nvmrc / package.json engines)
+git clone https://github.com/Epic-Design-Labs/nextjs-throttle-starter.git
+cd nextjs-throttle-starter
 cp .env.local.example .env.local
 # Fill in THROTTLE_API_KEY + THROTTLE_STORE_ID from https://app.usethrottle.dev
 npm install
@@ -53,6 +55,19 @@ npm run dev
 ```
 
 Open [http://localhost:3000](http://localhost:3000).
+
+> **Node 22 is a hard requirement**, not a preference: on Node 20 Vitest dies at
+> startup with `ERR_REQUIRE_ESM`, which reads like a broken test suite rather
+> than a wrong runtime. Check `node -v` first.
+
+> **`npm run dev` is wrapped** by `scripts/dev-watchdog.sh`, which runs
+> `next dev` in its own process group and hard-kills the group if it leaks
+> memory or enters a restart storm (see the post-mortem at the top of that
+> script). It is a **bash script, so it does not run under cmd.exe or
+> PowerShell** — on Windows either run it from Git Bash, point npm at bash
+> (`npm config set script-shell "C:\Program Files\Git\bin\bash.exe"`), or use
+> `npm run dev:unguarded` for a bare `next dev`. Tune it with
+> `DEV_RSS_LIMIT_MB`, `DEV_MAX_PROCS`, `DEV_MAX_RESTARTS`.
 
 ### Required environment variables
 
@@ -68,8 +83,8 @@ Open [http://localhost:3000](http://localhost:3000).
 
 | Var | Purpose | Required |
 |-----|---------|----------|
-| `CLERK_SECRET_KEY` | Server-side secret key (`sk_…`) from your Clerk dashboard → API Keys. | yes |
-| `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` | Browser-safe publishable key (`pk_…`) from the same dashboard page. | yes |
+| `CLERK_SECRET_KEY` | Server-side secret key (`sk_…`) from your Clerk dashboard → API Keys. | for auth |
+| `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` | Browser-safe publishable key (`pk_…`) from the same dashboard page. | for auth |
 | `CLERK_WEBHOOK_SIGNING_SECRET` | svix signing secret from Clerk → Webhooks → Endpoint settings. Required only if you provision a webhook (see [Webhooks](#webhooks)). | optional |
 
 Without these the starter falls back to stub providers so the UI keeps rendering. **The order-read and address routes return 501 until Clerk is configured** — they refuse to identify the buyer from request input alone.
@@ -117,7 +132,8 @@ src/
         checkout-session/     # Mint Throttle PaymentEmbed session
         customer-addresses/   # Buyer-scoped address CRUD
         customer-payment-methods/ # List + set default + remove vaulted cards
-        orders/               # Buyer-scoped order list + by-id
+        orders/               # Buyer-scoped order list + by-id (+ reorder)
+        subscriptions/        # List + pause / resume / cancel
         webhook/              # Throttle event receiver (HMAC-verified)
       webhooks/clerk/         # Clerk event receiver (svix-verified)
       auth/me/                # Buyer identity + default address (prefill)
@@ -137,6 +153,9 @@ src/
     content/markdown.ts       # Markdown file loader (gray-matter)
     repositories/             # Data access (products JSON, blog/pages markdown)
     validators/               # Zod schemas
+    redirects.ts              # Redirect rules consumed by next.config.ts
+    analytics.ts              # Pluggable event hooks
+    structured-data.ts        # JSON-LD builders (Product, Organization, …)
     auth/                     # AuthProvider port + Clerk impl + demo fallback
       types.ts                #   AuthProvider, AuthUser interfaces
       clerk-provider.ts       #   default impl
@@ -145,6 +164,8 @@ src/
     throttle/                 # Throttle SDK glue
       cart.ts, sessions.ts, orders.ts
       customers.ts, customer-addresses.ts, payment-methods.ts
+      shipping-tax.ts         #   shipping quote + tax calculation
+      subscriptions.ts        #   list / pause / resume / cancel
       webhook.ts              #   HMAC verify for /api/throttle/webhook
       checkout-provider.ts    #   implements local CheckoutProvider interface
       clients.ts              #   lazy SDK client singletons
@@ -153,6 +174,7 @@ src/
     checkout/                 # Pluggable CheckoutProvider (Throttle default)
     http/
       validate.ts             # requireUuid — rejects non-UUID path params
+      fetch-with-retry.ts     # bounded retry + per-attempt timeout for adapters
   store/                      # Zustand stores
     cart.ts                   #   cart + Throttle sync queue
     wishlist.ts, auth.ts      #   legacy auth (fallback)
@@ -163,8 +185,19 @@ src/
   proxy.ts                    # Clerk + security headers (Next 16; was middleware.ts)
 messages/
   en.json, es.json            # next-intl translations
+tests/
+  unit/*.test.ts              # Vitest units (pricing, webhook HMAC, validators)
+  smoke-test.mjs              # Playwright-driven smoke run
+  stubs/                      # server-only stub for the unit environment
+scripts/
+  dev-watchdog.sh             # wraps `next dev` (see Quick Start)
+  seed-orders.sh              # push captured test orders via the Throttle API
+.github/workflows/
+  ci.yml                      # lint + unit tests + build on push / PR
 docs/
   CUSTOMIZATION.md            # Full customization guide
+  STARTER-IMPROVEMENTS.md     # Backlog of starter changes from client builds
+  live-pim-dynamicparams.md   # Soft-404 recipe when pointing at a live PIM
 ```
 
 ## Customization
@@ -180,6 +213,8 @@ Everything is configurable from a few key files:
 | Blog posts | `content/blog/*.md` (markdown + frontmatter) |
 | CMS pages | `content/pages/*.md` (markdown + frontmatter) |
 | Translations | `messages/en.json`, `messages/es.json` |
+| Redirects | `src/lib/redirects.ts` (consumed by `next.config.ts`) |
+| Build tuning (SSG timeout / concurrency) | `next.config.ts` — raise `staticPageGenerationTimeout` and uncomment `experimental.staticGenerationMaxConcurrency` when the repositories point at a live API |
 
 See [CUSTOMIZATION.md](docs/CUSTOMIZATION.md) for the full guide.
 
@@ -198,6 +233,9 @@ See [CUSTOMIZATION.md](docs/CUSTOMIZATION.md) for the full guide.
          → "Change quantity" → PATCH /…/items/{itemId}
          → "Remove"          → DELETE /…/items/{itemId}
          → "Clear cart"      → abandon Throttle cart; fresh one on next add
+         → "Apply discount"  → POST/DELETE /…/{id}/discount
+         → shipping + tax    → POST /…/{id}/shipping-tax  (quote rates, then
+                                                           select a method)
 ```
 
 All mutations run through a per-tab serial queue so a quick "add + update qty" can't race ahead of the original POST. The Throttle cart id and the local → Throttle line-item id mapping persist to localStorage so the cart survives reloads.
@@ -206,16 +244,25 @@ All mutations run through a per-tab serial queue so a quick "add + update qty" c
 
 ```
 [Buyer]  → /checkout (form prefilled from /api/auth/me when signed in)
-         → POST /api/throttle/checkout-session     ({ throttleCartId, items, customer })
+         → POST /api/throttle/cart/{id}/shipping-tax   (quote + select method)
+         → POST /api/throttle/checkout-session         ({ throttleCartId, items, customer })
               ├─ Reuses the cart built up during browsing if still `open`,
               │   otherwise rebuilds one from local items
-              ├─ POST /api/v1/carts/{id}/checkout  (cart → draft order)
-              └─ POST /api/v1/checkout-sessions/embed-token
-         ← { checkoutSessionId, embedUrl, orderId }
-         → Mounts <PaymentEmbed /> from @usethrottle/checkout-react
+              ├─ Writes the buyer's shipping address onto the cart
+              └─ Creates a CART-BACKED checkout session (@usethrottle/checkout-sdk)
+                  with collect.shippingAddress = false — the cart already has it
+         ← { id, url, status, metadata: { throttleCartId } }
+         → Mounts <PaymentEmbed sessionId={id} /> from @usethrottle/checkout-react
+              (the embed mints its own embed token from the session)
          → onSucceeded → /checkout/success?order_id=...
-                          ↑ /api/throttle/orders/[id] (ownership-checked)
+                          ↑ /api/throttle/orders/[id]
+         → buyer backs out → POST /api/throttle/checkout-session/cancel
 ```
+
+**No draft order is pre-created.** The session is bound to the cart, so the
+capture finalizes one order carrying the cart's line items, address and totals —
+which means **the order id does not exist until payment succeeds** and arrives via
+the embed's `onSucceeded`, not in the session response.
 
 ### Authentication + customer mirror
 
@@ -249,18 +296,24 @@ read throttleCustomerId from the session — never from the request body.
 | File | Purpose |
 |------|---------|
 | `src/lib/throttle/clients.ts` | Lazy `CartClient` + `CheckoutClient` singletons. |
-| `src/lib/throttle/cart.ts` | `createCart`, `addCartItem(s)`, `updateCartItem`, `removeCartItem`, `checkoutCart`, `getCart` — via `@usethrottle/cart`. |
-| `src/lib/throttle/sessions.ts` | `createEmbedSession` via `@usethrottle/checkout-sdk`. |
-| `src/lib/throttle/orders.ts` | `getOrder` via `checkout-sdk`; `listOrders` via `api-client`. |
+| `src/lib/throttle/cart.ts` | `createCart`, `addCartItem(s)`, `updateCartItem`, `removeCartItem`, `getCart`, `getCartLineItems`, `setCartShippingAddress`, `applyDiscount`, `removeDiscount` — via `@usethrottle/cart`. |
+| `src/lib/throttle/sessions.ts` | `createCartBackedSession`, `cancelCheckoutSession` via `@usethrottle/checkout-sdk`. |
+| `src/lib/throttle/orders.ts` | `getOrder` via `checkout-sdk`; `listOrders` via `api-client`; `getOrderConfirmation` (hydrates line items from the backing cart when the order record doesn't embed them). |
 | `src/lib/throttle/customers.ts` | `createCustomer`, `getCustomer`, `getCustomerByExternalId`. |
 | `src/lib/throttle/customer-addresses.ts` | `listAddresses`, `createAddress`, `updateAddress`, `deleteAddress`, `saveAddressIfNew` — via `@usethrottle/api-client`. |
 | `src/lib/throttle/payment-methods.ts` | `listPaymentMethods`, `setDefaultPaymentMethod`, `removePaymentMethod` — via `@usethrottle/api-client`. |
+| `src/lib/throttle/shipping-tax.ts` | `calculateShippingTax`, `selectShippingMethod` — live rate quote + tax for the cart. |
+| `src/lib/throttle/subscriptions.ts` | `listSubscriptions`, `getSubscription`, `pause`/`resume`/`cancelSubscription`. |
 | `src/lib/throttle/webhook.ts` | `verifyThrottleSignature` (`X-Throttle-Signature`). |
 | `src/lib/throttle/checkout-provider.ts` | Implements the local `CheckoutProvider` interface against Throttle. |
 | `src/lib/auth/*` | `AuthProvider` port + Clerk impl + demo fallback. |
-| `src/lib/http/validate.ts` | `requireUuid` — boundary validation for dynamic route params. |
+| `src/lib/http/validate.ts` | `requireUuid` — boundary validation for dynamic route params; `assertSameOrigin` — lightweight CSRF guard for state-changing routes. |
+| `src/lib/http/fetch-with-retry.ts` | `fetchWithRetry` — bounded retries, jittered backoff, per-attempt timeout for adapter fetches. No callers in the demo (the repositories read local files); wire it up when you add a live backend. |
 | `src/app/api/throttle/cart/**` | Real-time cart sync (POST/PATCH/DELETE). |
-| `src/app/api/throttle/checkout-session/route.ts` | Mint PaymentEmbed session. |
+| `src/app/api/throttle/checkout-session/route.ts` | Create the cart-backed PaymentEmbed session. |
+| `src/app/api/throttle/checkout-session/cancel/route.ts` | Cancel the session when the buyer abandons the embed. |
+| `src/app/api/throttle/cart/[cartId]/shipping-tax/route.ts` | Quote shipping rates + tax, and select a method. |
+| `src/app/api/throttle/subscriptions/{,[id]}/route.ts` | Buyer-scoped subscription list + pause / resume / cancel. |
 | `src/app/api/throttle/customer-addresses/**` | Buyer-scoped address CRUD. |
 | `src/app/api/throttle/customer-payment-methods/**` | Buyer-scoped payment method list / set-default / remove. |
 | `src/app/api/throttle/orders/{,[id]}/route.ts` | Buyer-scoped order list + by-id (ownership-checked). |
@@ -350,7 +403,7 @@ For local dev, expose your dev server with a tunnel (ngrok, cloudflared, etc.) a
 | Guarantee | How |
 |-----------|-----|
 | **No price tampering.** Server is the only source of truth for line-item prices. | `POST /api/throttle/cart/{id}/items` accepts only `{ variantId, quantity }`; `name`, `unitPrice`, `imageUrl`, `description` are read from `productRepository.findVariant(variantId)`. |
-| **No IDOR on order routes.** Buyers can't enumerate or read other buyers' orders. | `/api/throttle/orders*` reads the customer id from the Clerk session and rejects any request without one. The `[id]` route additionally compares `order.customerId` to the session before returning. |
+| **No enumeration of order routes.** `/api/throttle/orders*` is auth-gated and never takes a customer id from request input. | The customer id comes from the Clerk session; unauthenticated requests get 401 and an unconfigured auth provider gets 501. The `[id]` route compares `order.customerId` to the session **when both are present** — it is not yet deny-by-default, and the starter does not yet link a Throttle customer to the cart/session, so that comparison is usually skipped. Tightening it (plus customer linking and guest receipt tokens) is tracked as §B1 in `docs/STARTER-IMPROVEMENTS.md`. |
 | **No SSRF via path traversal.** Dynamic route params can't redirect upstream fetches. | `requireUuid()` at every dynamic-route boundary rejects non-UUID segments with `400 invalid_id` before any id reaches the SDK. |
 | **Webhooks verified.** Both Throttle and Clerk webhooks are HMAC/svix-verified before any handler runs. | `src/lib/throttle/webhook.ts` (HMAC-SHA256 + timestamp tolerance) and `verifyWebhook` from `@clerk/nextjs/webhooks`. |
 | **CSP locked down.** Inline frames + external script origins explicitly allow-listed; no `'unsafe-eval'`. | `src/proxy.ts` composes `clerkMiddleware()` with a strict CSP allowing only `clerk.com`, `clerk.accounts.dev`, `checkout.usethrottle.dev`, plus per-connector fragments for the modules you enable. |
@@ -375,7 +428,8 @@ interface CheckoutProvider {
 | `/shop` | Product catalog with filters and sorting |
 | `/[slug]` | Product detail, category, or brand (auto-resolved) |
 | `/cart` | Shopping cart |
-| `/checkout` | Checkout form |
+| `/checkout` | Checkout form — shipping, live rates, discount, PaymentEmbed |
+| `/checkout/success` | Order confirmation (reads `?order_id=`) |
 | `/search` | Search (also available via Cmd+K modal) |
 | `/wishlist` | Saved products |
 | `/brands` | All brands |
@@ -385,12 +439,53 @@ interface CheckoutProvider {
 | `/account/addresses` | Saved shipping addresses, synced to the Throttle customer |
 | `/account/payment-methods` | Saved cards (vaulted at checkout) — set default, remove |
 | `/account/settings` | Clerk's `<UserProfile />` — profile, password, 2FA, sessions |
-| `/auth/login` | Sign in |
+| `/auth/login` | Sign in (Clerk `<SignIn />`, demo form as fallback) |
+| `/auth/register` | Sign up (Clerk `<SignUp />`, demo form as fallback) |
+| `/auth/forgot-password` | Demo-only reset form (toasts, sends nothing — real resets go through Clerk's own flow) |
+| `/blog`, `/blog/[slug]` | Blog index + post (markdown + frontmatter) |
+| `/pages`, `/pages/[slug]` | CMS pages index + page (markdown + frontmatter) |
 | `/about` | About the starter + Epic Design Labs |
 | `/contact` | Contact details (static — no form handler until the mailer module lands; see `docs/STARTER-IMPROVEMENTS.md` C5) |
 | `/faq` | FAQ accordion |
 | `/policies/*` | Shipping, returns, privacy, terms |
 | `/sitemap` | Human-readable sitemap (the XML for crawlers is at `/sitemap.xml`) |
+
+## Scripts
+
+| Script | What it does |
+|--------|--------------|
+| `npm run dev` | `next dev` under `scripts/dev-watchdog.sh` (bash only — see Quick Start). |
+| `npm run dev:unguarded` | Bare `next dev`, no watchdog. Use on Windows/cmd. |
+| `npm run build` / `npm start` | Production build / serve. |
+| `npm run lint` | ESLint (flat config). |
+| `npm test` / `npm run test:watch` | Vitest unit suite (`tests/unit/**`). |
+| `npm run test:smoke` | Playwright-driven smoke run against an already-running server — defaults to `http://localhost:3100`, override with `BASE_URL`. |
+| `scripts/seed-orders.sh [count]` | Push captured test orders into the store over the API — TEST keys + the Card Simulator connector only. |
+
+### Testing
+
+Unit tests cover the parts where a regression is silent rather than loud:
+server-side pricing, webhook HMAC verification (including timestamp tolerance),
+the UUID/origin route guards, checkout-session cancellation, and the adapter
+retry helper. They run in Vitest's `node` environment with a stub for
+`server-only`, so server modules can be imported directly.
+
+```bash
+npm test              # once
+npm run test:watch    # watch mode
+```
+
+`.github/workflows/ci.yml` runs lint → unit tests → build on every push and PR,
+using the Node version in `.nvmrc`. **The build step runs with no secrets** —
+every Throttle/Clerk variable is optional (`src/lib/env.ts` defaults the rest),
+so a fresh clone builds out of the box.
+
+## Contributing / roadmap
+
+`docs/STARTER-IMPROVEMENTS.md` is the running backlog of starter changes
+distilled from real client builds — statuses, per-item "Done-when" checks, and
+the decisions behind what was deferred. Read it before designing something new,
+and append findings after every project.
 
 ## Need Help?
 
@@ -398,7 +493,7 @@ This starter is free and open source. If you need help customizing it or buildin
 
 - **Email**: support@epicdesignlabs.com
 - **Website**: [epicdesignlabs.com](https://epicdesignlabs.com)
-- **Issues**: [GitHub Issues](https://github.com/Epic-Design-Labs/nextjs-ecommerce-starter/issues)
+- **Issues**: [GitHub Issues](https://github.com/Epic-Design-Labs/nextjs-throttle-starter/issues)
 
 ## License
 
