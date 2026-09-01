@@ -15,6 +15,12 @@ interface SlugPageProps {
 // Only render slugs returned by generateStaticParams — any other slug
 // automatically gets a proper 404 response. Rebuild/redeploy to pick
 // up new products, categories, or brands.
+//
+// Flipping this to `true` (common when the catalog lives in a live PIM) turns
+// unknown slugs into **soft-404s**: the route-level loading.tsx commits a 200
+// before the resolver can call notFound(). Read
+// docs/live-pim-dynamicparams.md first — the recipe is: verify existence in
+// generateMetadata, and delete [slug]/loading.tsx.
 export const dynamicParams = false
 
 export async function generateStaticParams() {

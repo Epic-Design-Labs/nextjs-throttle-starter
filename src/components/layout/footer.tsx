@@ -54,6 +54,7 @@ const footerLinks = {
     { name: "Blog", href: "/blog" },
     { name: "Contact", href: "/contact" },
     { name: "FAQ", href: "/faq" },
+    { name: "Sitemap", href: "/sitemap" },
   ],
   legal: [
     { name: "Shipping Policy", href: "/policies/shipping" },

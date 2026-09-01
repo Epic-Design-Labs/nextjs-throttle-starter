@@ -11,9 +11,9 @@ export async function GET(req: NextRequest) {
     )
   }
 
-  // The route is gated behind clerkMiddleware (see src/middleware.ts).
+  // The route is gated behind clerkMiddleware (see src/proxy.ts).
   // Even so, double-check the auth context on the server so we never
-  // serve another buyer's orders if middleware is mis-configured.
+  // serve another buyer's orders if the proxy is mis-configured.
   if (!isClerkConfigured) {
     return NextResponse.json(
       {

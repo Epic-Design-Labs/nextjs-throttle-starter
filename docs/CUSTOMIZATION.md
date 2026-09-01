@@ -186,7 +186,7 @@ import { getTranslations } from "next-intl/server"
 const t = await getTranslations("shop")
 ```
 
-To add a language: copy `messages/en.json` to `messages/<locale>.json`, translate, and add the locale to `src/i18n/config.ts`. For locale routing (`/en/`, `/fr/`), add `next-intl` middleware.
+To add a language: copy `messages/en.json` to `messages/<locale>.json`, translate, and add the locale to `src/i18n/config.ts`. For locale routing (`/en/`, `/fr/`), add `next-intl` proxy handling in `src/proxy.ts`.
 
 ## Analytics
 
@@ -205,7 +205,7 @@ Pre-defined ecommerce events include `addToCart`, `purchase`, `search`, `viewPro
 
 ## Security Headers
 
-Security headers + CSP are configured in `src/middleware.ts`, composed with Clerk's middleware. The CSP runs in `report-only` mode in development and enforces in production, and already allow-lists Clerk and the Throttle checkout origin. Add directives when you introduce external scripts (analytics, other SDKs).
+Security headers + CSP are configured in `src/proxy.ts` (Next 16's replacement for `middleware.ts`), composed with Clerk's middleware. The CSP runs in `report-only` mode in development and enforces in production, and already allow-lists Clerk and the Throttle checkout origin. It is *composed*: a `baseCsp` for the core storefront, a preview-only fragment (gated on `VERCEL_ENV`), and a `connectorCsp` array where each optional module registers its own origins. Add an entry there — or extend `baseCsp` — when you introduce external scripts (analytics, other SDKs).
 
 ## Environment Variables
 

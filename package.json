@@ -20,6 +20,9 @@
     "typescript"
   ],
   "private": true,
+  "engines": {
+    "node": ">=22"
+  },
   "scripts": {
     "dev": "./scripts/dev-watchdog.sh",
     "dev:unguarded": "next dev",
