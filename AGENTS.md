@@ -15,9 +15,12 @@ This version has breaking changes — APIs, conventions, and file structure may 
 - **Node 22+ is required** (`.nvmrc`, `engines`). Vitest fails on Node 20 with a
   `ERR_REQUIRE_ESM` startup error from `vite/dist/node/index.js`, which looks
   like a broken test suite rather than a wrong runtime. Check `node -v` first.
-- **`npm run dev` is wrapped** by `scripts/dev-watchdog.sh` (process-group
-  watchdog for a Next 16 crash hazard). Use `npm run dev:unguarded` for a bare
-  `next dev`.
+- **`npm run dev` is wrapped** by a watchdog - `scripts/dev.mjs` dispatches to
+  `dev-watchdog.sh` (POSIX) or `dev-watchdog.ps1` (Windows). It guards a Next 16
+  hazard that has crashed hosts. `npm run dev:unguarded` is the bare `next dev`.
+  Before raising a limit or bypassing it, read
+  `docs/dev-server-memory-leak.md`: runaway `node` processes have two different
+  causes there, and only one of them is a memory problem.
 - **Security headers and CSP live in `src/proxy.ts`** — Next 16's replacement
   for `middleware.ts`. The CSP is composed: a base policy, a preview-only
   fragment, and a `connectorCsp` array that optional modules register into.
