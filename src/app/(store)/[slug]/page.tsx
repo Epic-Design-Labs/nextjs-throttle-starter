@@ -5,6 +5,7 @@ import { ProductDetailView } from "./product-detail-view"
 import { CategoryView } from "./category-view"
 import { BrandView } from "./brand-view"
 import { formatPrice } from "@/lib/utils"
+import { isUnpriced } from "@/lib/pricing"
 import { siteConfig } from "@/lib/config"
 import data from "@/data/products.json"
 
@@ -74,7 +75,8 @@ export async function generateMetadata({
     kind === "product" ? await productRepository.getBySlug(slug) : null
   if (product) {
     const variant = product.variants[0]
-    const price = variant ? formatPrice(variant.price, variant.currency) : ""
+    const unpriced = isUnpriced(variant)
+    const price = variant && !unpriced ? formatPrice(variant.price, variant.currency) : ""
     return {
       title: product.name,
       description: product.description,
@@ -88,12 +90,15 @@ export async function generateMetadata({
           ? [{ url: product.images[0].url, alt: product.images[0].alt }]
           : [],
       },
-      other: {
-        "product:price:amount": variant
-          ? String(variant.price / 100)
-          : "",
-        "product:price:currency": variant?.currency ?? "USD",
-      },
+      // Omit the price tags entirely when there is no price. A
+      // `product:price:amount` of 0 tells every scraper the item is free;
+      // absent tags just mean "not stated".
+      other: unpriced
+        ? {}
+        : {
+            "product:price:amount": String(variant!.price / 100),
+            "product:price:currency": variant!.currency,
+          },
     }
   }
 

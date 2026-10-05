@@ -66,8 +66,21 @@ export interface ProductVariant {
   id: string
   productId: string
   sku: string
+  /**
+   * Variant label, e.g. "Large / Black". Use the sentinel "Default" for a
+   * single-variant product: the cart lines suppress exactly that value, so a
+   * source that fills this with the product title prints the name twice.
+   */
   name: string
   price: number // in cents
+  /**
+   * True when the source says the item exists but has NO price (made to order,
+   * awaiting costing, quote-only). `price` is then meaningless - do not render
+   * it, do not publish it in OG tags or schema.org offers, and do not let the
+   * item reach the cart. Check it through `isUnpriced()` in src/lib/pricing.ts
+   * rather than comparing `price` to 0: zero is a price claim, absence is not.
+   */
+  unpriced?: boolean
   compareAtPrice?: number // original price for sale display
   currency: string
   inventory: VariantInventory

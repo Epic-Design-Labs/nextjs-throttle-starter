@@ -26,6 +26,12 @@ import { VariantSelector } from "@/components/products/variant-selector"
 import { QuantitySelector } from "@/components/products/quantity-selector"
 import { ProductGrid } from "@/components/products/product-grid"
 import { formatPrice } from "@/lib/utils"
+import {
+  PRICE_ON_REQUEST,
+  formatVariantPrice,
+  hasSalePrice,
+  isUnpriced,
+} from "@/lib/pricing"
 import { LOW_STOCK_THRESHOLD } from "@/lib/constants"
 import { breadcrumbJsonLd } from "@/lib/structured-data"
 import type { Product, Brand, Category } from "@/types"
@@ -67,6 +73,7 @@ export function ProductDetailView({
       slug: product.slug,
       name: product.name,
       price: product.variants[0]?.price ?? 0,
+      unpriced: isUnpriced(product.variants[0]),
       imageUrl: product.images[0]?.url ?? "",
       imageAlt: product.images[0]?.alt ?? product.name,
     })
@@ -77,9 +84,10 @@ export function ProductDetailView({
   )
   if (!selectedVariant) return null
 
-  const isOnSale =
-    selectedVariant.compareAtPrice &&
-    selectedVariant.compareAtPrice > selectedVariant.price
+  const unpriced = isUnpriced(selectedVariant)
+  // hasSalePrice is false for an unpriced variant: there is nothing to
+  // discount, so a stray compareAtPrice must not render a strikethrough.
+  const isOnSale = hasSalePrice(selectedVariant)
   const inventory = selectedVariant.inventory
   const inStock = inventory.quantity > 0 || inventory.allowBackorder
   // "Only N left" applies only to tracked variants that can't be
@@ -91,6 +99,13 @@ export function ProductDetailView({
     inventory.quantity <= LOW_STOCK_THRESHOLD
 
   function handleAddToCart() {
+    // Blocked in the handler, not only by disabling the button: a disabled
+    // button is a UI state, and this is a correctness rule. Nothing without a
+    // price may become a cart line - the server cart route refuses it too.
+    if (isUnpriced(selectedVariant)) {
+      toast(`${PRICE_ON_REQUEST} - contact us for a quote on this item.`)
+      return
+    }
     addToCart({
       variantId: selectedVariant!.id,
       productId: product.id,
@@ -99,6 +114,7 @@ export function ProductDetailView({
       image: product.images[0] ?? { url: "", alt: product.name },
       slug: product.slug,
       price: selectedVariant!.price,
+      unpriced: false, // guarded above; keeps the store's contract explicit
       quantity,
     })
     openCart()
@@ -139,10 +155,17 @@ export function ProductDetailView({
       ratingValue: product.rating,
       reviewCount: product.reviewCount,
     },
+    // An unpriced item publishes an Offer WITHOUT a price. Emitting 0 here
+    // would put "free" into rich results and Merchant Center, which is a
+    // harder mistake to walk back than a missing field.
     offers: {
       "@type": "Offer",
-      price: (selectedVariant.price / 100).toFixed(2),
-      priceCurrency: selectedVariant.currency,
+      ...(unpriced
+        ? {}
+        : {
+            price: (selectedVariant.price / 100).toFixed(2),
+            priceCurrency: selectedVariant.currency,
+          }),
       availability: inStock
         ? "https://schema.org/InStock"
         : "https://schema.org/OutOfStock",
@@ -207,7 +230,7 @@ export function ProductDetailView({
 
           <div className="mt-4 flex items-center gap-3">
             <span className="text-2xl font-semibold">
-              {formatPrice(selectedVariant.price, selectedVariant.currency)}
+              {formatVariantPrice(selectedVariant)}
             </span>
             {isOnSale && (
               <>
@@ -263,11 +286,15 @@ export function ProductDetailView({
             <Button
               size="lg"
               className="w-full sm:flex-1"
-              disabled={!inStock}
+              disabled={!inStock || unpriced}
               onClick={handleAddToCart}
             >
               <ShoppingBag className="mr-2 h-4 w-4" />
-              {inStock ? "Add to Cart" : "Out of Stock"}
+              {unpriced
+                ? PRICE_ON_REQUEST
+                : inStock
+                  ? "Add to Cart"
+                  : "Out of Stock"}
             </Button>
           </div>
 

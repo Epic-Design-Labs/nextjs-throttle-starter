@@ -6,7 +6,7 @@ import Image from "next/image"
 import { Heart } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { StarRating } from "@/components/products/star-rating"
-import { formatPrice } from "@/lib/utils"
+import { formatVariantPrice, hasSalePrice, isUnpriced } from "@/lib/pricing"
 import { PLACEHOLDER_IMAGE } from "@/lib/constants"
 import { useWishlistStore } from "@/store/wishlist"
 import { toast } from "sonner"
@@ -30,7 +30,8 @@ export function ProductCard({ product }: ProductCardProps) {
 
   const price = defaultVariant.price
   const compareAtPrice = defaultVariant.compareAtPrice
-  const isOnSale = compareAtPrice && compareAtPrice > price
+  // An unpriced variant has nothing to discount, so no strikethrough either.
+  const isOnSale = hasSalePrice(defaultVariant)
   const image = product.images[0]
   const isWishlisted = mounted && wishlistItems.some((i) => i.productId === product.id)
 
@@ -46,6 +47,7 @@ export function ProductCard({ product }: ProductCardProps) {
         name: product.name,
         slug: product.slug,
         price,
+        unpriced: isUnpriced(defaultVariant),
         image: image ?? { url: PLACEHOLDER_IMAGE, alt: product.name },
       })
       toast.success("Added to wishlist")
@@ -87,11 +89,11 @@ export function ProductCard({ product }: ProductCardProps) {
         </h3>
         <div className="mt-1 flex items-center gap-2">
           <span className="text-sm font-medium">
-            {formatPrice(price, defaultVariant.currency)}
+            {formatVariantPrice(defaultVariant)}
           </span>
           {isOnSale && (
             <span className="text-xs text-muted-foreground line-through">
-              {formatPrice(compareAtPrice, defaultVariant.currency)}
+              {formatVariantPrice({ ...defaultVariant, price: compareAtPrice! })}
             </span>
           )}
         </div>

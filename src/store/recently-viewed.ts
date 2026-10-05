@@ -8,6 +8,8 @@ interface RecentlyViewedItem {
   slug: string
   name: string
   price: number
+  /** Snapshot of ProductVariant.unpriced - see WishlistItem.unpriced. */
+  unpriced?: boolean
   imageUrl: string
   imageAlt: string
   viewedAt: number

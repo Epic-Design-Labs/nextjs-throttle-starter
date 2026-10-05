@@ -34,6 +34,9 @@ interface CartState {
     image: ProductImage
     slug: string
     price: number
+    /** True when the catalog has no price for this variant. Such an item is
+     *  refused here as well as by the server cart route. */
+    unpriced?: boolean
     quantity?: number
   }) => void
   removeItem: (variantId: string) => void
@@ -235,6 +238,17 @@ export const useCartStore = create<CartState>()(
       syncError: null,
 
       addItem: (item) => {
+        // Backstop for the PDP's own check. An unpriced line would sync to the
+        // server cart at 0 and make the order total wrong; the server route
+        // refuses it, so accepting it locally only produces a cart that cannot
+        // check out.
+        if (item.unpriced === true) {
+          console.warn(
+            `[cart] refusing unpriced variant ${item.variantId} - no catalog price`
+          )
+          return
+        }
+
         const quantity = item.quantity ?? 1
         const existing = get().items.find((i) => i.variantId === item.variantId)
 
