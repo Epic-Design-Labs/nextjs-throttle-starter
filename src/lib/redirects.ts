@@ -16,6 +16,17 @@ export interface RedirectRule {
 }
 
 export const redirects: RedirectRule[] = [
+  // Page 1 of a listing lives at the bare slug, so /{slug}/page/1 would be a
+  // duplicate of /{slug} competing with it in search. It is handled here rather
+  // than in the route because app/(store)/[slug]/page/[n] sets
+  // `dynamicParams = false` and only generates n >= 2 - an in-route redirect
+  // for page 1 could never run, the request 404s first.
+  {
+    source: "/:slug/page/1",
+    destination: "/:slug",
+    permanent: true,
+  },
+
   // Legacy URL patterns from earlier ecommerce platforms — these are common
   // paths that Shopify, WooCommerce, etc. use. Uncomment as needed when
   // migrating from another platform.

@@ -4,6 +4,11 @@ import { productRepository, categoryRepository, brandRepository } from "@/lib/re
 import { ProductDetailView } from "./product-detail-view"
 import { CategoryView } from "./category-view"
 import { BrandView } from "./brand-view"
+import {
+  loadBrandListing,
+  loadCategoryListing,
+  resolveSlugKind,
+} from "./listing"
 import { formatPrice } from "@/lib/utils"
 import { siteConfig } from "@/lib/config"
 import data from "@/data/products.json"
@@ -33,35 +38,6 @@ export async function generateStaticParams() {
   ) ?? []
 
   return [...productSlugs, ...categorySlugs, ...brandSlugs]
-}
-
-type SlugKind = "product" | "category" | "brand"
-
-/**
- * Decide what a slug refers to before fetching anything expensive.
- *
- * Category and brand lookups are served from a cached list — an in-memory
- * find, no network. Product detail is a live Foundry call. The original order
- * asked the expensive question first, so every category page view fired a
- * guaranteed-404 product lookup, twice per request (generateMetadata and the
- * page), each one a real Aurora query.
- *
- * Falls through to "product" when the slug is neither: only then is a network
- * call worth making, and a miss there is a genuine 404.
- *
- * Precedence note: a slug matching BOTH a category and a product now resolves
- * to the category, where it previously resolved to the product. Preserving the
- * old precedence would mean always paying for the product lookup, which is the
- * cost being removed.
- */
-async function resolveSlugKind(slug: string): Promise<SlugKind> {
-  const [category, brand] = await Promise.all([
-    categoryRepository.getBySlug(slug),
-    brandRepository.getBySlug(slug),
-  ])
-  if (category) return "category"
-  if (brand) return "brand"
-  return "product"
 }
 
 export async function generateMetadata({
@@ -172,44 +148,34 @@ export default async function SlugPage({ params }: SlugPageProps) {
     )
   }
 
-  // Check category
-  const category =
-    kind === "category" ? await categoryRepository.getBySlug(slug) : null
-  if (category) {
-    const [{ items: products, pagination }, subcategories, ancestors] =
-      await Promise.all([
-        productRepository.getByCategory(slug, { page: 1, limit: 40 }),
-        categoryRepository.getChildren(category.id),
-        categoryRepository.getAncestors(category.id),
-      ])
-    return (
-      <CategoryView
-        category={category}
-        products={products}
-        pagination={pagination}
-        subcategories={subcategories}
-        ancestors={ancestors}
-      />
-    )
+  // Category and brand listings are page 1. Pages 2..N are served by
+  // ./page/[n]/page.tsx through the same loaders, so the two cannot drift.
+  if (kind === "category") {
+    const listing = await loadCategoryListing(slug, 1)
+    if (listing) {
+      return (
+        <CategoryView
+          category={listing.category}
+          products={listing.products}
+          pagination={listing.pagination}
+          subcategories={listing.subcategories}
+          ancestors={listing.ancestors}
+        />
+      )
+    }
   }
 
-  // Check brand
-  const brand =
-    kind === "brand" ? await brandRepository.getBySlug(slug) : null
-  if (brand) {
-    const { items: products, pagination } = await productRepository.list(
-      { tags: [] },
-      undefined,
-      { page: 1, limit: 40 }
-    )
-    const brandProducts = products.filter((p) => p.brandId === brand.id)
-    return (
-      <BrandView
-        brand={brand}
-        products={brandProducts}
-        pagination={{ ...pagination, total: brandProducts.length, totalPages: 1, hasNext: false }}
-      />
-    )
+  if (kind === "brand") {
+    const listing = await loadBrandListing(slug, 1)
+    if (listing) {
+      return (
+        <BrandView
+          brand={listing.brand}
+          products={listing.products}
+          pagination={listing.pagination}
+        />
+      )
+    }
   }
 
   notFound()

@@ -9,6 +9,7 @@ import {
 } from "@/components/ui/breadcrumb"
 import { ProductGrid } from "@/components/products/product-grid"
 import { Pagination } from "@/components/products/pagination"
+import { listingHref } from "./listing-href"
 import type { Brand, Product, PaginationMeta } from "@/types"
 
 interface BrandViewProps {
@@ -47,7 +48,11 @@ export function BrandView({ brand, products, pagination }: BrandViewProps) {
       </div>
 
       <div className="mt-12">
-        <Pagination pagination={pagination} basePath={`/${brand.slug}`} />
+        <Pagination
+          pagination={pagination}
+          basePath={`/${brand.slug}`}
+          hrefFor={(page) => listingHref(brand.slug, page)}
+        />
       </div>
     </div>
   )
