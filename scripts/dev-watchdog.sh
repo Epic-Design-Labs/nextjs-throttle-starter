@@ -37,6 +37,32 @@ INTERVAL_S=1
 
 cd "$(dirname "$0")/.." || exit 1
 
+# Arm check. Both tripwires below depend on `pgrep -g` and `ps -o rss=`. Neither
+# exists on Windows: Git Bash ships no pgrep, and its `ps` has no RSS column. The
+# polling loop would then skip its tripwire block every second and supervise
+# nothing while printing the dev server's normal output, which looks healthy.
+# That is worse than no watchdog, so refuse rather than pretend.
+if ! command -v pgrep >/dev/null 2>&1 || ! ps -o rss= -p $$ >/dev/null 2>&1; then
+  echo "" >&2
+  echo "dev-watchdog: pgrep and/or 'ps -o rss=' unavailable - the watchdog CANNOT arm." >&2
+  case "$(uname -s 2>/dev/null)" in
+    MINGW* | MSYS* | CYGWIN*)
+      echo "dev-watchdog: this is the POSIX watchdog running on Windows." >&2
+      echo "dev-watchdog: run 'npm run dev', which dispatches to scripts/dev-watchdog.ps1." >&2
+      ;;
+    *)
+      echo "dev-watchdog: install procps (pgrep), or run 'npm run dev:unguarded'." >&2
+      ;;
+  esac
+  echo "" >&2
+  exit 1
+fi
+
+# Say the limits out loud. Without this there is no way to tell an armed
+# watchdog from one that is quietly doing nothing - which is how the Windows
+# no-op survived unnoticed.
+echo "dev-watchdog: armed (POSIX). Limits: ${MAX_PROCS} processes, ${LIMIT_MB} MB total, ${MAX_RESTARTS} restarts."
+
 # shellcheck disable=SC2206 # intentional word-splitting of the override
 CMD=(${DEV_WATCHDOG_CMD:-node_modules/.bin/next dev})
 
