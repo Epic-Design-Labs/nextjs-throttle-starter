@@ -9,6 +9,9 @@ export interface WishlistItem {
   name: string
   slug: string
   price: number
+  /** Snapshot of ProductVariant.unpriced - this list renders from the store
+   *  long after the variant is out of scope, and must not print "$0.00". */
+  unpriced?: boolean
   image: ProductImage
 }
 

@@ -5,7 +5,7 @@ import Link from "next/link"
 import Image from "next/image"
 import { useRecentlyViewedStore } from "@/store/recently-viewed"
 import { PLACEHOLDER_IMAGE } from "@/lib/constants"
-import { formatPrice } from "@/lib/utils"
+import { formatVariantPrice } from "@/lib/pricing"
 
 interface RecentlyViewedProps {
   excludeProductId?: string
@@ -44,7 +44,7 @@ export function RecentlyViewed({ excludeProductId }: RecentlyViewedProps) {
               {item.name}
             </p>
             <p className="text-xs text-muted-foreground">
-              {formatPrice(item.price)}
+              {formatVariantPrice({ price: item.price, unpriced: item.unpriced })}
             </p>
           </Link>
         ))}

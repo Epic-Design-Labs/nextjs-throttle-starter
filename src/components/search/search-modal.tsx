@@ -5,7 +5,7 @@ import Link from "next/link"
 import Image from "next/image"
 import { Search, X, ArrowRight } from "lucide-react"
 import { StarRating } from "@/components/products/star-rating"
-import { formatPrice } from "@/lib/utils"
+import { formatVariantPrice } from "@/lib/pricing"
 import { PLACEHOLDER_IMAGE } from "@/lib/constants"
 import type { Product } from "@/types"
 import data from "@/data/products.json"
@@ -158,7 +158,7 @@ export function SearchModal({ isOpen, onClose }: SearchModalProps) {
                         />
                       </div>
                       <span className="shrink-0 text-sm font-medium">
-                        {variant && formatPrice(variant.price, variant.currency)}
+                        {variant && formatVariantPrice(variant)}
                       </span>
                     </Link>
                   )

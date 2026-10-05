@@ -4,6 +4,7 @@ import { env } from "@/lib/env"
 import { ThrottleApiError, addCartItem } from "@/lib/throttle"
 import { productRepository } from "@/lib/repositories"
 import { requireUuid } from "@/lib/http/validate"
+import { isUnpriced } from "@/lib/pricing"
 
 // Price and display name come from the server-side catalog, NEVER from
 // the client. Accepting `unitPrice` from the request body would let
@@ -68,6 +69,22 @@ export async function POST(
     )
   }
   const { product, variant } = resolved
+
+  // The real guard. The PDP blocks this in its handler too, but the client is
+  // not the authority: a variant with no price cannot become a cart line, or
+  // the order total silently treats it as free.
+  if (isUnpriced(variant)) {
+    return NextResponse.json(
+      {
+        error: {
+          code: "unpriced_variant",
+          message:
+            "This item has no price yet and cannot be added to the cart. Contact us for a quote.",
+        },
+      },
+      { status: 400 }
+    )
+  }
 
   if (product.status !== "active") {
     return NextResponse.json(
