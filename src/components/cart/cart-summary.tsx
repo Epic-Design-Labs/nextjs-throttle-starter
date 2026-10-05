@@ -3,6 +3,7 @@
 import { formatPrice } from "@/lib/utils"
 import { Separator } from "@/components/ui/separator"
 import { siteConfig } from "@/lib/config"
+import { freeShippingOffered } from "@/lib/shipping-offer"
 import { useCartStore } from "@/store/cart"
 
 interface CartSummaryProps {
@@ -33,17 +34,23 @@ export function CartSummary({
   const discount = useCartStore((s) => s.appliedDiscount)
   const discountTotal = useCartStore((s) => s.getDiscountTotal)()
 
-  // Browsing surfaces (withTotals=false) show a local free-shipping-threshold
-  // estimate. Checkout (withTotals=true) binds to the live cart quote passed in
-  // as props — those are the server's numbers, so there's no client-side copy
-  // to drift. A null shipping means no method is locked yet.
-  const fallbackShipping =
-    subtotal >= siteConfig.freeShippingThreshold ? 0 : 599
-  const shipping = withTotals ? shippingProp ?? 0 : fallbackShipping
-  const showEstimate = withTotals && shippingProp == null
+  // Shipping and tax are only ever SHOWN when they come from the live cart
+  // quote (checkout, withTotals + a locked method). Everywhere else they are
+  // unknown, and the summary says so.
+  //
+  // It used to guess on browsing surfaces: shipping from a local threshold
+  // comparison, tax from subtotal * taxRate, both rendered as plain figures
+  // inside a Total. Two problems. The guessed total is one checkout can
+  // contradict - and did, since the threshold comparison also made
+  // `freeShippingThreshold: 0` (which means the offer is OFF) read as "every
+  // order ships free". And the one honest marker, "(estimated)", rendered only
+  // in the withTotals case, i.e. exactly where the numbers were real.
+  const quoted = withTotals && shippingProp != null
+  const shipping = quoted ? shippingProp! : 0
+  const tax = quoted ? taxProp ?? 0 : 0
 
-  const tax = withTotals ? taxProp ?? 0 : Math.round(subtotal * siteConfig.taxRate)
-
+  // Without a quote this is a subtotal after discount, not a total. Labelled as
+  // such below rather than dressed up as the amount they will pay.
   const total = Math.max(0, subtotal - discountTotal + shipping + tax)
 
   return (
@@ -67,34 +74,44 @@ export function CartSummary({
       <div className="flex justify-between text-sm">
         <span className="text-muted-foreground">
           Shipping
-          {showEstimate && (
+          {!quoted && (
             <span className="ml-1 text-xs">(calculated at checkout)</span>
           )}
         </span>
         <span className="tabular-nums">
-          {showEstimate
-            ? "—"
-            : shipping === 0
-              ? "Free"
-              : formatPrice(shipping)}
+          {/* An em dash, never "$0.00": "no charge" and "not worked out yet"
+              are different claims, and only the server can make the first. */}
+          {!quoted ? "—" : shipping === 0 ? "Free" : formatPrice(shipping)}
         </span>
       </div>
 
       <div className="flex justify-between text-sm">
         <span className="text-muted-foreground">
-          Tax{showEstimate && <span className="ml-1 text-xs">(estimated)</span>}
+          Tax
+          {!quoted && (
+            <span className="ml-1 text-xs">(calculated at checkout)</span>
+          )}
         </span>
-        <span className="tabular-nums">{formatPrice(tax)}</span>
+        <span className="tabular-nums">{!quoted ? "—" : formatPrice(tax)}</span>
       </div>
 
       <Separator />
       <div className="flex justify-between font-medium">
-        <span>Total</span>
+        <span>{quoted ? "Total" : "Subtotal"}</span>
         <span className="tabular-nums">{formatPrice(total)}</span>
       </div>
 
+      {!quoted && (
+        <p className="text-xs text-muted-foreground">
+          Shipping and tax are calculated at checkout.
+        </p>
+      )}
+
+      {/* The free-shipping nudge is an offer claim: it must not appear when the
+          offer is switched off, or it reads "Add $0.00 more for free shipping". */}
       {!withTotals &&
         subtotal > 0 &&
+        freeShippingOffered() &&
         subtotal < siteConfig.freeShippingThreshold && (
           <p className="text-xs text-muted-foreground">
             Add {formatPrice(siteConfig.freeShippingThreshold - subtotal)} more for free shipping

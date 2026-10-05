@@ -1,4 +1,7 @@
 import type { Metadata } from "next"
+import { siteConfig } from "@/lib/config"
+import { formatPrice } from "@/lib/utils"
+import { freeShippingOffered } from "@/lib/shipping-offer"
 
 export const metadata: Metadata = {
   title: "Shipping Policy",
@@ -17,7 +20,12 @@ export default function ShippingPolicyPage() {
           <li>Standard Shipping (5-7 business days): $5.99</li>
           <li>Express Shipping (2-3 business days): $12.99</li>
           <li>Overnight Shipping (1 business day): $24.99</li>
-          <li>Free shipping on all orders over $75</li>
+          {freeShippingOffered() && (
+            <li>
+              Free shipping on all orders over{" "}
+              {formatPrice(siteConfig.freeShippingThreshold)}
+            </li>
+          )}
         </ul>
 
         <h2 className="text-xl font-semibold text-foreground">
