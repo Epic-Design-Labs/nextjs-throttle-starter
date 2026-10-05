@@ -5,6 +5,7 @@ import { ArrowRight } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { siteConfig } from "@/lib/config"
+import { freeShippingOffered } from "@/lib/shipping-offer"
 import { formatPrice } from "@/lib/utils"
 import { ProductGrid } from "@/components/products/product-grid"
 import { NewsletterForm } from "@/components/layout/newsletter-form"
@@ -47,9 +48,13 @@ export default async function HomePage() {
       {/* Hero */}
       <section className="relative flex h-[650px] items-center justify-center bg-neutral-50">
         <div className="mx-auto max-w-3xl px-4 text-center">
-          <Badge variant="secondary" className="mb-4">
-            Free shipping on orders over {formatPrice(siteConfig.freeShippingThreshold)}
-          </Badge>
+          {/* Same rule as TrustSignals: no offer, no claim. */}
+          {freeShippingOffered() && (
+            <Badge variant="secondary" className="mb-4">
+              Free shipping on orders over{" "}
+              {formatPrice(siteConfig.freeShippingThreshold)}
+            </Badge>
+          )}
           <h1 className="text-4xl font-bold tracking-tight sm:text-5xl lg:text-6xl">
             Next.js Ecommerce Starter
           </h1>
