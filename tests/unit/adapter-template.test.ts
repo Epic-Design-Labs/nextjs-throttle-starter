@@ -38,6 +38,20 @@ describe("adapter template wiring", () => {
   })
 })
 
+describe("unpriced items fail closed", () => {
+  it("downgrades an unpriceable product to draft rather than selling it for $0", () => {
+    // The model has no `unpriced` state yet (backlog A4), and `price` must hold
+    // a number. Marking the product non-active is what stops the server cart
+    // route accepting it, so this mapping is the guard, not a nicety.
+    expect(source).toContain('status: priced ? "active" : "draft"')
+  })
+
+  it("rejects input that is not slug-shaped before it reaches a URL", () => {
+    expect(source).toContain("isSlugLike(")
+    expect(source).toContain("if (!isSlugLike(slug)) return null")
+  })
+})
+
 describe("toCents", () => {
   it("parses a decimal string exactly", () => {
     // parseFloat("66.34") * 100 is 6633.999999999999.

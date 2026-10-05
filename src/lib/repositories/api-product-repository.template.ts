@@ -115,6 +115,19 @@ const fetchCatalog = cache(async function fetchCatalog<T>(
   return (await response.json()) as T
 })
 
+/**
+ * Accept only slug-shaped input before it reaches a URL.
+ *
+ * encodeURIComponent already neutralises "../" in a path segment, so this is
+ * defence in depth rather than the only guard - but a template gets copied, and
+ * the copy may interpolate the value somewhere less careful (a query string, a
+ * cache key, a log line). Validating the shape at the boundary is the same
+ * posture as requireUuid() in src/lib/http/validate.ts.
+ */
+function isSlugLike(value: string): boolean {
+  return /^[A-Za-z0-9][A-Za-z0-9._-]{0,200}$/.test(value)
+}
+
 export class CatalogHttpError extends Error {
   constructor(
     readonly status: number,
@@ -183,11 +196,15 @@ function toVariant(api: ApiProduct): ProductVariant {
     // "Default" is the sentinel the cart lines suppress. Filling this with the
     // product title prints the name twice in the drawer, cart and checkout.
     name: "Default",
+    // `cents` is null when the source says "no price". 0 is NOT a safe stand-in:
+    // it means free, and a storefront that offers a one-off industrial part for
+    // $0.00 is the exact failure this template is trying to prevent. The price
+    // field has to hold something, so toProduct() below marks the whole product
+    // non-purchasable when this is null - see the status mapping there.
     price: cents ?? 0,
-    // The whole point of Day-0 question 1: absence is not zero. Uncomment the
-    // next line once the `unpriced` state lands on ProductVariant (backlog A4);
-    // until then an unpriced item from this adapter renders as $0.00, which is
-    // precisely the bug that item exists to close.
+    // Once the `unpriced` state lands on ProductVariant (backlog A4), set it
+    // here and drop the status downgrade: the item can then stay browsable and
+    // render "Price on request" instead of disappearing from the catalog.
     // unpriced: cents === null,
     currency: api.currency ?? "USD",
     inventory: { quantity: 0, trackInventory: false, allowBackorder: true },
@@ -198,6 +215,7 @@ function toVariant(api: ApiProduct): ProductVariant {
 
 function toProduct(api: ApiProduct): Product {
   const now = new Date().toISOString()
+  const priced = toCents(api.priceFinal) !== null
   return {
     id: api.id,
     slug: api.slug,
@@ -216,7 +234,11 @@ function toProduct(api: ApiProduct): Product {
     categoryIds: api.categoryIds ?? [],
     brandId: api.brandId ?? "",
     variants: [toVariant(api)],
-    status: "active",
+    // Fail CLOSED while the model has no unpriced state: an item we cannot
+    // price is "draft", not "active". The server cart route refuses a
+    // non-active product, so it cannot be bought at a price nobody quoted.
+    // Losing it from the catalog is the lesser bug; selling it for $0 is not.
+    status: priced ? "active" : "draft",
     tags: [],
     rating: 0,
     reviewCount: 0,
@@ -282,6 +304,9 @@ export const apiProductRepository: ProductRepository = {
   },
 
   async getBySlug(slug: string): Promise<Product | null> {
+    // A slug that is not slug-shaped cannot match anything upstream, so this
+    // is a "no such product", not a request worth making.
+    if (!isSlugLike(slug)) return null
     try {
       const data = await fetchCatalog<ApiProduct>(
         `/products/${encodeURIComponent(slug)}`
