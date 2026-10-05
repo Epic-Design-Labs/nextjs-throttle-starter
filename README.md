@@ -60,14 +60,18 @@ Open [http://localhost:3000](http://localhost:3000).
 > startup with `ERR_REQUIRE_ESM`, which reads like a broken test suite rather
 > than a wrong runtime. Check `node -v` first.
 
-> **`npm run dev` is wrapped** by `scripts/dev-watchdog.sh`, which runs
-> `next dev` in its own process group and hard-kills the group if it leaks
-> memory or enters a restart storm (see the post-mortem at the top of that
-> script). It is a **bash script, so it does not run under cmd.exe or
-> PowerShell** — on Windows either run it from Git Bash, point npm at bash
-> (`npm config set script-shell "C:\Program Files\Git\bin\bash.exe"`), or use
-> `npm run dev:unguarded` for a bare `next dev`. Tune it with
-> `DEV_RSS_LIMIT_MB`, `DEV_MAX_PROCS`, `DEV_MAX_RESTARTS`.
+> **`npm run dev` is wrapped by a watchdog** that hard-kills the dev process
+> tree if it leaks memory or enters a restart storm - a real hazard that has
+> crashed hosts, not a theoretical one. `scripts/dev.mjs` picks the right
+> implementation for your platform (`dev-watchdog.sh` on macOS/Linux,
+> `dev-watchdog.ps1` on Windows), so there is nothing to configure; both print
+> `dev-watchdog: armed ...` with their limits on startup. Tune with
+> `DEV_RSS_LIMIT_MB`, `DEV_MAX_PROCS`, `DEV_MAX_RESTARTS`, or use
+> `npm run dev:unguarded` for a bare `next dev`.
+>
+> **Read [docs/dev-server-memory-leak.md](docs/dev-server-memory-leak.md)** before
+> raising a limit or bypassing the watchdog - it covers the two different causes
+> of runaway `node` processes and how to tell them apart.
 
 ### Required environment variables
 
@@ -190,7 +194,9 @@ tests/
   smoke-test.mjs              # Playwright-driven smoke run
   stubs/                      # server-only stub for the unit environment
 scripts/
-  dev-watchdog.sh             # wraps `next dev` (see Quick Start)
+  dev.mjs                     # picks the watchdog for your platform
+  dev-watchdog.sh             # POSIX watchdog around `next dev`
+  dev-watchdog.ps1            # Windows watchdog (no process groups: walks the tree)
   seed-orders.sh              # push captured test orders via the Throttle API
 .github/workflows/
   ci.yml                      # lint + unit tests + build on push / PR
@@ -198,6 +204,7 @@ docs/
   CUSTOMIZATION.md            # Full customization guide
   STARTER-IMPROVEMENTS.md     # Backlog of starter changes from client builds
   live-pim-dynamicparams.md   # Soft-404 recipe when pointing at a live PIM
+  dev-server-memory-leak.md   # Why `npm run dev` runs under a watchdog
 ```
 
 ## Customization
@@ -455,8 +462,8 @@ interface CheckoutProvider {
 
 | Script | What it does |
 |--------|--------------|
-| `npm run dev` | `next dev` under `scripts/dev-watchdog.sh` (bash only — see Quick Start). |
-| `npm run dev:unguarded` | Bare `next dev`, no watchdog. Use on Windows/cmd. |
+| `npm run dev` | `next dev` under a platform-appropriate watchdog, via `scripts/dev.mjs`. Works on macOS, Linux and Windows. |
+| `npm run dev:unguarded` | Bare `next dev`, no watchdog. The escape hatch - see [docs/dev-server-memory-leak.md](docs/dev-server-memory-leak.md) before reaching for it. |
 | `npm run build` / `npm start` | Production build / serve. |
 | `npm run lint` | ESLint (flat config). |
 | `npm test` / `npm run test:watch` | Vitest unit suite (`tests/unit/**`). |
