@@ -308,7 +308,8 @@ read throttleCustomerId from the session — never from the request body.
 | `src/lib/throttle/checkout-provider.ts` | Implements the local `CheckoutProvider` interface against Throttle. |
 | `src/lib/auth/*` | `AuthProvider` port + Clerk impl + demo fallback. |
 | `src/lib/http/validate.ts` | `requireUuid` — boundary validation for dynamic route params; `assertSameOrigin` — lightweight CSRF guard for state-changing routes. |
-| `src/lib/http/fetch-with-retry.ts` | `fetchWithRetry` — bounded retries, jittered backoff, per-attempt timeout for adapter fetches. No callers in the demo (the repositories read local files); wire it up when you add a live backend. |
+| `src/lib/http/fetch-with-retry.ts` | `fetchWithRetry` — bounded retries, jittered backoff, per-attempt timeout for adapter fetches. The demo repositories read local files, so the live caller is the adapter template below. |
+| `src/lib/repositories/api-product-repository.template.ts` | **Start here when swapping the catalog for a real API.** A `ProductRepository` with `fetchWithRetry`, two-layer caching, exact money parsing and 404-vs-outage handling already wired in, plus the day-0 questions to ask the catalog team. See [CUSTOMIZATION.md](docs/CUSTOMIZATION.md). |
 | `src/app/api/throttle/cart/**` | Real-time cart sync (POST/PATCH/DELETE). |
 | `src/app/api/throttle/checkout-session/route.ts` | Create the cart-backed PaymentEmbed session. |
 | `src/app/api/throttle/checkout-session/cancel/route.ts` | Cancel the session when the buyer abandons the embed. |
