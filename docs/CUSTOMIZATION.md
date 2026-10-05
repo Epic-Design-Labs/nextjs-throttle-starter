@@ -100,7 +100,27 @@ Product data lives in `src/data/products.json`. To add a product:
 
 > Image URLs that get sent to Throttle (cart line items, orders) must be **absolute** `http(s)` URLs — Throttle rejects relative paths. The cart sync route drops relative image URLs before sending; supply absolute CDN URLs in `products.json` if you want product images to appear on Throttle-side line items.
 
-Note: this starter is **bring-your-own-catalog** — Throttle is the commerce engine (cart, checkout, orders, customers, subscriptions), but your product catalog lives in `products.json` (or whatever you swap in). To move the catalog to a CMS or database, implement the `ProductRepository` / `CategoryRepository` interfaces from `src/types/index.ts` and update `src/lib/repositories/index.ts`.
+Note: this starter is **bring-your-own-catalog** — Throttle is the commerce engine (cart, checkout, orders, customers, subscriptions), but your product catalog lives in `products.json` (or whatever you swap in).
+
+### Swapping the catalog for a real API
+
+**Start from `src/lib/repositories/api-product-repository.template.ts`.** Copy it, rename it `<vendor>-product-repository.ts`, fill in its three marked sections, and export it from `src/lib/repositories/index.ts` in place of the JSON repository. Do not start from a blank file — the template already wires in the things that are easy to leave out and expensive to add later:
+
+- **Retry, timeout and backoff.** Every request goes through `fetchWithRetry` (`src/lib/http/fetch-with-retry.ts`): bounded retries on 429/5xx and network errors, exponential backoff with jitter, and a timeout per attempt. Tunable per adapter with `<PREFIX>_FETCH_MAX_ATTEMPTS` / `<PREFIX>_FETCH_TIMEOUT_MS`. A transient upstream hiccup should not fail a page render, let alone a whole static build.
+- **Two layers of caching, doing different jobs.** React `cache()` dedupes repeat calls inside one render (`generateMetadata` and the page asking the same question); the Data Cache (`next: { revalidate, tags }`) persists across requests and is what a webhook purges with `revalidateTag(CATALOG_CACHE_TAG)`.
+- **Exact money parsing.** `toCents("66.34")` rather than `parseFloat * 100`, which is wrong in the general case — and a price one cent out is invisible until an invoice disagrees with a cart.
+- **404 vs outage.** A missing product returns `null`; anything else keeps throwing, so an outage never gets cached as "this product does not exist".
+
+The template also carries the four questions to put to the catalog team **on day 0**, because all four have changed type definitions on previous builds:
+
+1. Can an item exist with **no price**? (Map it to an unpriced state, never to `0` — a `0` makes the store advertise a free product.)
+2. What does a **removed** item return? (404 and 410 mean different things; a sold one-off is a URL that was indexed and linked.)
+3. Is money a **number or a string**?
+4. Is long-form copy **HTML or plain text**? (`Product.body` is rendered with `dangerouslySetInnerHTML` and must only ever hold trusted HTML.)
+
+Two more worth settling before writing the client: is CORS origin-locked (so the adapter must stay server-only), and is there a **feed or cursor** endpoint for enumeration? `list(..., { limit: 10_000 })` is not enumeration — a real API caps the page size and returns page 1 with a `200`, which silently truncates `app/sitemap.ts` to a fraction of the catalog.
+
+`CategoryRepository` and `BrandRepository` follow the same shape; the interfaces are in `src/types/index.ts`.
 
 ## Blog & Pages (Markdown)
 
