@@ -10,6 +10,7 @@ import {
 } from "@/components/ui/breadcrumb"
 import { ProductGrid } from "@/components/products/product-grid"
 import { Pagination } from "@/components/products/pagination"
+import { listingHref } from "./listing-href"
 import type { Category, Product, PaginationMeta } from "@/types"
 
 interface CategoryViewProps {
@@ -116,6 +117,7 @@ export function CategoryView({
         <Pagination
           pagination={pagination}
           basePath={`/${category.slug}`}
+          hrefFor={(page) => listingHref(category.slug, page)}
         />
       </div>
     </div>

@@ -7,18 +7,31 @@ interface PaginationProps {
   pagination: PaginationMeta
   basePath: string
   searchParams?: Record<string, string>
+  /**
+   * Build the href for a page yourself, instead of the default
+   * `${basePath}?page=N`.
+   *
+   * Listings that live on a statically-rendered route pass a path builder
+   * (`/{slug}/page/{n}`): reading a `page` search param on such a route would
+   * opt the whole route into dynamic rendering, and path URLs are better for
+   * SEO besides. `/shop` and `/search` keep the query form - they are dynamic
+   * regardless because they carry real filter params.
+   */
+  hrefFor?: (page: number) => string
 }
 
 export function Pagination({
   pagination,
   basePath,
   searchParams = {},
+  hrefFor,
 }: PaginationProps) {
   const { page, totalPages, hasNext, hasPrev } = pagination
 
   if (totalPages <= 1) return null
 
   function buildHref(pageNum: number) {
+    if (hrefFor) return hrefFor(pageNum)
     const params = new URLSearchParams(searchParams)
     params.set("page", String(pageNum))
     return `${basePath}?${params.toString()}`
